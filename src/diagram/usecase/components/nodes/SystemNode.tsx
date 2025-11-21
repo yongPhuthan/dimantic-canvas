@@ -2,9 +2,17 @@ import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
 import type { UseCaseReactFlowNode } from '../../types/graph'
 
 export function SystemNode({ data, selected }: NodeProps<UseCaseReactFlowNode>) {
+  const handleVisibility = selected
+    ? 'opacity-100 pointer-events-auto scale-100'
+    : 'opacity-0 pointer-events-none scale-75 group-hover:opacity-100 group-hover:pointer-events-auto group-hover:scale-100'
+
+  const handleBase =
+    'h-3 w-3 rounded-full border-2 border-white bg-sky-400 shadow ring-2 ring-white transition duration-150 ' +
+    handleVisibility
+
   return (
     <div
-      className="relative h-full w-full rounded-2xl border-2 border-dashed bg-slate-800/40 p-4 text-left text-slate-100"
+      className="group relative h-full w-full rounded-2xl border-2 border-dashed bg-slate-800/40 p-4 text-left text-slate-100"
       style={{ zIndex: 0 }}
     >
       <NodeResizer
@@ -26,8 +34,31 @@ export function SystemNode({ data, selected }: NodeProps<UseCaseReactFlowNode>) 
         <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
         <span className="text-slate-100">{data.label}</span>
       </div>
-      <Handle id="system-target" type="target" position={Position.Left} className="opacity-0" />
-      <Handle id="system-source" type="source" position={Position.Right} className="opacity-0" />
+      {/* Visible handles on all sides for flexible connections */}
+      <Handle
+        id="system-top"
+        type="target"
+        position={Position.Top}
+        className={`${handleBase} -mt-1`}
+      />
+      <Handle
+        id="system-right"
+        type="source"
+        position={Position.Right}
+        className={`${handleBase} -mr-1`}
+      />
+      <Handle
+        id="system-bottom"
+        type="target"
+        position={Position.Bottom}
+        className={`${handleBase} -mb-1`}
+      />
+      <Handle
+        id="system-left"
+        type="source"
+        position={Position.Left}
+        className={`${handleBase} -ml-1`}
+      />
     </div>
   )
 }

@@ -41,6 +41,8 @@ export function FloatingEdge({
   selected,
   data,
   style,
+  markerStart,
+  markerEnd,
 }: EdgeProps<UseCaseReactFlowEdge>) {
   const nodes = useNodes() as Array<Node<UseCaseReactFlowNode> & { positionAbsolute?: XYPosition }>
   const { getNode } = useReactFlow<UseCaseReactFlowNode, UseCaseReactFlowEdge>()
@@ -115,36 +117,58 @@ export function FloatingEdge({
     targetPosition,
   })
 
+  const strokeColor =
+    (style as { stroke?: string } | undefined)?.stroke ??
+    (data?.kind === USE_CASE_EDGE_TYPE.INCLUDE
+      ? '#38bdf8'
+      : data?.kind === USE_CASE_EDGE_TYPE.EXTEND
+        ? '#a855f7'
+        : '#cbd5e1')
+
+  const appliedMarkerEnd = markerEnd ? { ...markerEnd, color: markerEnd.color ?? strokeColor } : undefined
+  const edgeStyle = {
+    ...(style ?? {}),
+    ...(selected ? { strokeWidth: ((style?.strokeWidth as number | undefined) ?? 2) + 1 } : {}),
+  }
+
   return (
     <>
-      <BaseEdge id={id} path={path} style={style} className={selected ? 'stroke-2' : ''} />
+      <BaseEdge
+        id={id}
+        path={path}
+        style={edgeStyle}
+        markerStart={markerStart}
+        markerEnd={appliedMarkerEnd}
+        interactionWidth={28}
+        className={selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_rgba(56,189,248,0.7)]' : ''}
+      />
       {data?.label ? (
         <EdgeLabelRenderer>
           {(() => {
             const labelOffset =
               data.kind === USE_CASE_EDGE_TYPE.INCLUDE
                 ? { x: -40, y: -12 }
-                : data.kind === USE_CASE_EDGE_TYPE.EXTEND
+                  : data.kind === USE_CASE_EDGE_TYPE.EXTEND
                   ? { x: 40, y: 12 }
                   : { x: 0, y: 0 }
             return (
-          <div
-            style={{
-              position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX + labelOffset.x}px, ${labelY + labelOffset.y}px)`,
-              pointerEvents: 'none',
-              fontSize: 12,
-              fontWeight: 600,
-              color: '#cbd5e1',
-              backgroundColor: 'rgba(15,23,42,0.9)',
-              padding: '2px 8px',
-              borderRadius: 999,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {data.label}
-          </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  transform: `translate(-50%, -50%) translate(${labelX + labelOffset.x}px, ${labelY + labelOffset.y}px)`,
+                  pointerEvents: 'none',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#cbd5e1',
+                  backgroundColor: 'rgba(15,23,42,0.9)',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {data.label}
+              </div>
             )
           })()}
         </EdgeLabelRenderer>

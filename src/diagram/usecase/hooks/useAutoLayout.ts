@@ -280,6 +280,15 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
 
         const edges: Edge<UseCaseEdgeData>[] = graph.edges.map((edge) => {
           const label = edgeLabelForType(edge.type)
+          const style = edgeStyleForType(edge.type)
+          const strokeColor =
+            typeof style.stroke === 'string'
+              ? style.stroke
+              : edge.type === USE_CASE_EDGE_TYPE.INCLUDE
+                ? '#38bdf8'
+                : edge.type === USE_CASE_EDGE_TYPE.EXTEND
+                  ? '#a855f7'
+                  : '#cbd5e1'
           return {
             id: edge.id,
             source: edge.source,
@@ -289,8 +298,8 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
               kind: edge.type,
               ...(label ? { label } : {}),
             },
-            markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: '#cbd5e1' },
-            style: edgeStyleForType(edge.type),
+            markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: strokeColor },
+            style,
           }
         })
 
