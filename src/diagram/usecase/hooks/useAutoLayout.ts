@@ -68,6 +68,13 @@ const elk = new ELK()
 const CHAR_WIDTH = 8
 const PILL_PADDING = 48
 const CHILD_VERTICAL_GAP = 24
+const STACK_MARGIN_X = 48
+const STACK_MARGIN_Y = 48
+const STACK_GAP_VERTICAL = 32
+const GRID_GAP_X = 32
+const GRID_GAP_Y = 32
+const BOUNDARY_MIN_WIDTH = 260
+const BOUNDARY_MIN_HEIGHT = 200
 
 function labelBasedWidth(label: string, minWidth: number, maxWidth: number): number {
   const estimated = label.length * CHAR_WIDTH + PILL_PADDING
@@ -94,7 +101,7 @@ function flattenElkToReactFlow(
     parentId: raw.parentId,
     position: { x, y },
     data: { label: raw.label, kind: raw.type },
-    draggable: raw.type !== USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY,
+    draggable: true,
     // Keep children inside their boundary when parentId is set.
     ...(raw.parentId ? { extent: 'parent' as const } : {}),
     width: elkNode.width ?? baseSize.width,
@@ -104,6 +111,39 @@ function flattenElkToReactFlow(
   for (const child of elkNode.children ?? []) {
     flattenElkToReactFlow(child, rawNodeMap, accumulator)
   }
+}
+
+function layoutChildrenGrid(nodes: Node<UseCaseNodeData>[]) {
+  const useCaseDefaults = DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.USE_CASE]
+
+  nodes
+    .filter((node) => node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY)
+    .forEach((boundary) => {
+      const children = nodes.filter(
+        (node) => node.parentId === boundary.id && node.type === USE_CASE_NODE_TYPE.USE_CASE,
+      )
+      if (children.length === 0) return
+
+      const columns = Math.max(1, Math.min(children.length, Math.ceil(Math.sqrt(children.length))))
+      const maxChildWidth = Math.max(...children.map((child) => child.width ?? useCaseDefaults.width))
+      const maxChildHeight = Math.max(...children.map((child) => child.height ?? useCaseDefaults.height))
+      const cellWidth = maxChildWidth + GRID_GAP_X
+      const cellHeight = maxChildHeight + GRID_GAP_Y
+
+      children.forEach((child, index) => {
+        const column = index % columns
+        const row = Math.floor(index / columns)
+        child.position.x = STACK_MARGIN_X + column * cellWidth
+        child.position.y = STACK_MARGIN_Y + row * cellHeight
+      })
+
+      const gridWidth = columns * cellWidth - GRID_GAP_X
+      const rows = Math.ceil(children.length / columns)
+      const gridHeight = rows * cellHeight - GRID_GAP_Y
+
+      boundary.width = Math.max(BOUNDARY_MIN_WIDTH, gridWidth + STACK_MARGIN_X * 2)
+      boundary.height = Math.max(BOUNDARY_MIN_HEIGHT, gridHeight + STACK_MARGIN_Y * 2)
+    })
 }
 
 function edgeLabelForType(kind: UseCaseEdgeKind) {
@@ -236,6 +276,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
         layout.children?.forEach((child) =>
           flattenElkToReactFlow(child, rawNodeMap, nodes),
         )
+        layoutChildrenGrid(nodes)
 
         const edges: Edge<UseCaseEdgeData>[] = graph.edges.map((edge) => {
           const label = edgeLabelForType(edge.type)

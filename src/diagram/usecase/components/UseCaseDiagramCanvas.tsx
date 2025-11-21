@@ -5,10 +5,12 @@ import {
   Panel,
   ReactFlow,
   ReactFlowProvider,
+  applyNodeChanges,
+  type Node,
   useReactFlow,
   useNodesState,
 } from '@xyflow/react'
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import '@xyflow/react/dist/style.css'
 
@@ -18,6 +20,7 @@ import { SystemNode } from './nodes/SystemNode'
 import { UseCaseNode } from './nodes/UseCaseNode'
 import { mockUseCaseGraph } from '../mock/useCaseGraph'
 import { useAutoLayout } from '../hooks/useAutoLayout'
+import { USE_CASE_NODE_TYPE, type UseCaseNodeData } from '../types/graph'
 
 const nodeTypes = {
   ACTOR: ActorNode,
@@ -30,7 +33,15 @@ const edgeTypes = { floating: FloatingEdge }
 function DiagramInner() {
   const { result, isLoading, error } = useAutoLayout(mockUseCaseGraph)
   const { fitView } = useReactFlow()
-  const [nodes, setNodes, onNodesChange] = useNodesState(result.nodes)
+  const [nodes, setNodes] = useNodesState(result.nodes)
+  const handleNodesChange = useCallback(
+    (changes) =>
+      setNodes((current) => {
+        const changed = applyNodeChanges(changes, current)
+        return changed
+      }),
+    [setNodes],
+  )
 
   // Sync layout output into the interactive nodes state whenever ELK finishes.
   useEffect(() => {
@@ -51,7 +62,7 @@ function DiagramInner() {
       <ReactFlow
         nodes={nodes}
         edges={result.edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         proOptions={{ hideAttribution: true }}
