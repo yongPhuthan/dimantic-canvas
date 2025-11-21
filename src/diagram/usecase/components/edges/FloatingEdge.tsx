@@ -5,12 +5,14 @@ import {
   getSmoothStepPath,
   useNodes,
   useReactFlow,
-  type EdgeProps,
-  type Node,
-  type XYPosition,
+  useStoreApi,
 } from '@xyflow/react'
+import type { EdgeProps, InternalNode, XYPosition } from '@xyflow/react'
+import { useMemo } from 'react'
 
 import { USE_CASE_EDGE_TYPE, type UseCaseReactFlowEdge, type UseCaseReactFlowNode } from '../../types/graph'
+
+type FlowNodeWithPosition = UseCaseReactFlowNode & { parentId?: string }
 
 function pickPositions(
   sourceCenter: { x: number; y: number },
@@ -44,20 +46,22 @@ export function FloatingEdge({
   markerStart,
   markerEnd,
 }: EdgeProps<UseCaseReactFlowEdge>) {
-  const nodes = useNodes() as Array<Node<UseCaseReactFlowNode> & { positionAbsolute?: XYPosition }>
-  const { getNode } = useReactFlow<UseCaseReactFlowNode, UseCaseReactFlowEdge>()
+  const nodes = useNodes() as FlowNodeWithPosition[]
+  const { getInternalNode } = useReactFlow<UseCaseReactFlowNode, UseCaseReactFlowEdge>()
+  const store = useStoreApi()
+  const rfId = store.getState().rfId ?? 'rf'
+  const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
 
-  const withAbsolutePosition = (node: Node<UseCaseReactFlowNode>) => {
-    // React Flow populates positionAbsolute but we also walk parents as a fallback for nested groups.
-    if (node.positionAbsolute) return node.positionAbsolute
-
+  const getAbsolutePosition = (node: FlowNodeWithPosition): XYPosition => {
     let x = node.position.x
     let y = node.position.y
-    let parent = node.parentId ? getNode(node.parentId) : undefined
-    while (parent) {
+    let parentId = node.parentId
+    while (parentId) {
+      const parent = nodeMap.get(parentId)
+      if (!parent) break
       x += parent.position.x
       y += parent.position.y
-      parent = parent.parentId ? getNode(parent.parentId) : undefined
+      parentId = parent.parentId
     }
     return { x, y }
   }
@@ -69,52 +73,115 @@ export function FloatingEdge({
     return null
   }
 
+  const findHandle = (
+    nodeId: string,
+    type: 'source' | 'target',
+    preferredPosition: Position,
+    referencePoint: XYPosition,
+  ): { point: XYPosition; position: Position } | null => {
+    const node = nodeMap.get(nodeId)
+    if (!node) return null
+
+    const internal = getInternalNode?.(nodeId) as InternalNode<UseCaseReactFlowNode> | undefined
+    type HandleBoundsEntry = {
+      x: number
+      y: number
+      width?: number
+      height?: number
+      position: Position
+    }
+    const bounds = (internal?.internals as { handleBounds?: Record<'source' | 'target', HandleBoundsEntry[]> } | undefined)
+      ?.handleBounds?.[type]
+    if (!bounds || bounds.length === 0) return null
+
+    const centers = bounds.map((h) => {
+      const origin = getAbsolutePosition(node)
+      return {
+        position: h.position,
+        point: {
+          x: origin.x + h.x + (h.width ?? 0) / 2,
+          y: origin.y + h.y + (h.height ?? 0) / 2,
+        },
+      }
+    })
+
+    const matchByPreference = centers.find((c) => c.position === preferredPosition)
+    if (matchByPreference) return matchByPreference
+
+    const nearest = centers.reduce((best, current) => {
+      const dx = current.point.x - referencePoint.x
+      const dy = current.point.y - referencePoint.y
+      const dist2 = dx * dx + dy * dy
+      if (!best || dist2 < best.dist2) {
+        return { entry: current, dist2 }
+      }
+      return best
+    }, null as { entry: { point: XYPosition; position: Position }; dist2: number } | null)
+
+    if (nearest) return nearest.entry
+
+    const origin = getAbsolutePosition(node)
+    return { position: preferredPosition, point: origin }
+  }
+
   // Derive attachment sides based on relative positions to avoid ugly overlaps.
+  const sourceAbs = getAbsolutePosition(sourceNode)
+  const targetAbs = getAbsolutePosition(targetNode)
   const sourceCenter = {
-    x: withAbsolutePosition(sourceNode).x + (sourceNode.width ?? 0) / 2,
-    y: withAbsolutePosition(sourceNode).y + (sourceNode.height ?? 0) / 2,
+    x: sourceAbs.x + (sourceNode.width ?? 0) / 2,
+    y: sourceAbs.y + (sourceNode.height ?? 0) / 2,
   }
   const targetCenter = {
-    x: withAbsolutePosition(targetNode).x + (targetNode.width ?? 0) / 2,
-    y: withAbsolutePosition(targetNode).y + (targetNode.height ?? 0) / 2,
+    x: targetAbs.x + (targetNode.width ?? 0) / 2,
+    y: targetAbs.y + (targetNode.height ?? 0) / 2,
   }
   const { sourcePosition, targetPosition } = pickPositions(sourceCenter, targetCenter)
 
+  const sourceHandleCenter = findHandle(source, 'source', sourcePosition, targetCenter)
+  const targetHandleCenter = findHandle(target, 'target', targetPosition, sourceCenter)
+
+  const sourceSideUsed = sourceHandleCenter?.position ?? sourcePosition
+  const targetSideUsed = targetHandleCenter?.position ?? targetPosition
+
   const sourceX =
-    sourcePosition === Position.Left
+    sourceHandleCenter?.point.x ??
+    (sourceSideUsed === Position.Left
       ? sourceCenter.x - (sourceNode.width ?? 0) / 2
-      : sourcePosition === Position.Right
+      : sourceSideUsed === Position.Right
         ? sourceCenter.x + (sourceNode.width ?? 0) / 2
-        : sourceCenter.x
+        : sourceCenter.x)
 
   const targetX =
-    targetPosition === Position.Left
+    targetHandleCenter?.point.x ??
+    (targetSideUsed === Position.Left
       ? targetCenter.x - (targetNode.width ?? 0) / 2
-      : targetPosition === Position.Right
+      : targetSideUsed === Position.Right
         ? targetCenter.x + (targetNode.width ?? 0) / 2
-        : targetCenter.x
+        : targetCenter.x)
 
   const sourceY =
-    sourcePosition === Position.Top
+    sourceHandleCenter?.point.y ??
+    (sourceSideUsed === Position.Top
       ? sourceCenter.y - (sourceNode.height ?? 0) / 2
-      : sourcePosition === Position.Bottom
+      : sourceSideUsed === Position.Bottom
         ? sourceCenter.y + (sourceNode.height ?? 0) / 2
-        : sourceCenter.y
+        : sourceCenter.y)
 
   const targetY =
-    targetPosition === Position.Top
+    targetHandleCenter?.point.y ??
+    (targetSideUsed === Position.Top
       ? targetCenter.y - (targetNode.height ?? 0) / 2
-      : targetPosition === Position.Bottom
+      : targetSideUsed === Position.Bottom
         ? targetCenter.y + (targetNode.height ?? 0) / 2
-        : targetCenter.y
+        : targetCenter.y)
 
   const [path, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
-    sourcePosition,
+    sourcePosition: sourceSideUsed,
     targetX,
     targetY,
-    targetPosition,
+    targetPosition: targetSideUsed,
   })
 
   const strokeColor =
@@ -125,19 +192,42 @@ export function FloatingEdge({
         ? '#a855f7'
         : '#cbd5e1')
 
-  const appliedMarkerEnd = markerEnd ? { ...markerEnd, color: markerEnd.color ?? strokeColor } : undefined
+  // Always use a custom marker per edge/side so orientation follows the target side.
+  const appliedMarkerEnd = `url(#floating-arrow-${rfId}-${id}-${targetSideUsed})`
+  const appliedMarkerStart = typeof markerStart === 'string' ? markerStart : undefined
   const edgeStyle = {
     ...(style ?? {}),
     ...(selected ? { strokeWidth: ((style?.strokeWidth as number | undefined) ?? 2) + 1 } : {}),
   }
 
+  const markerOrientation =
+    {
+      [Position.Top]: '90', // point down into the node
+      [Position.Bottom]: '-90', // point up into the node
+      [Position.Left]: '0', // point right into the node
+      [Position.Right]: '180', // point left into the node
+    }[targetSideUsed] ?? 'auto'
+
   return (
     <>
+      <defs>
+        <marker
+          id={`floating-arrow-${rfId}-${id}-${targetSideUsed}`}
+          markerWidth="14"
+          markerHeight="14"
+          orient={markerOrientation}
+          markerUnits="userSpaceOnUse"
+          refX="12"
+          refY="7"
+        >
+          <path d="M 0 0 L 12 7 L 0 14 z" fill={strokeColor} />
+        </marker>
+      </defs>
       <BaseEdge
         id={id}
         path={path}
         style={edgeStyle}
-        markerStart={markerStart}
+        markerStart={appliedMarkerStart}
         markerEnd={appliedMarkerEnd}
         interactionWidth={28}
         className={selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_rgba(56,189,248,0.7)]' : ''}

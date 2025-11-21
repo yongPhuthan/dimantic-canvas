@@ -9,6 +9,7 @@ import {
   type Node,
   useReactFlow,
   useNodesState,
+  type NodeChange,
 } from '@xyflow/react'
 import { useCallback, useEffect } from 'react'
 
@@ -35,7 +36,7 @@ function DiagramInner() {
   const { fitView } = useReactFlow()
   const [nodes, setNodes] = useNodesState(result.nodes)
   const handleNodesChange = useCallback(
-    (changes) =>
+    (changes: NodeChange<Node<UseCaseNodeData>>[]) =>
       setNodes((current) => {
         const changed = applyNodeChanges(changes, current)
         return changed
