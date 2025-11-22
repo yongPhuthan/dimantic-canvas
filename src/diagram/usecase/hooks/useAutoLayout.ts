@@ -283,7 +283,147 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
           }),
         )
 
-        const nodeTypeLookup = new Map(graph.nodes.map((n) => [n.id, n.type]))
+        // Collect preferred side per node/role for deterministic assignment with caps.
+        type Role = 'source' | 'target'
+        type NodeRoleKey = `${string}|${Role}`
+        type Request = { edgeId: string; preferred: Position }
+        const requests = new Map<NodeRoleKey, Request[]>()
+
+        const sideFromCenters = (a: { x: number; y: number }, b: { x: number; y: number }): { aSide: Position; bSide: Position } => {
+          const horizontalFirst = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
+          if (horizontalFirst) {
+            const aSide = b.x >= a.x ? Position.Right : Position.Left
+            const bSide = b.x >= a.x ? Position.Left : Position.Right
+            return { aSide, bSide }
+          }
+          const aSide = b.y >= a.y ? Position.Bottom : Position.Top
+          const bSide = b.y >= a.y ? Position.Top : Position.Bottom
+          return { aSide, bSide }
+        }
+
+        graph.edges.forEach((edge) => {
+          const a = centers.get(edge.source)
+          const b = centers.get(edge.target)
+          if (!a || !b) return
+          const { aSide, bSide } = sideFromCenters(a, b)
+          const addRequest = (nodeId: string, side: Position, role: Role) => {
+            const key: NodeRoleKey = `${nodeId}|${role}`
+            const arr = requests.get(key) ?? []
+            arr.push({ edgeId: edge.id, preferred: side })
+            requests.set(key, arr)
+          }
+          addRequest(edge.source, aSide, 'source')
+          addRequest(edge.target, bSide, 'target')
+        })
+
+        // Allocate handles with cap per side, spill to other sides, then share when all sides used.
+        const MAX_PER_SIDE = 3
+        const SIDE_ORDER: Position[] = [Position.Right, Position.Left, Position.Top, Position.Bottom]
+        const sideLabel = (side: Position) =>
+          side === Position.Top ? 'top' : side === Position.Right ? 'right' : side === Position.Bottom ? 'bottom' : 'left'
+
+        type SideUsage = Record<Position, number>
+        const allocateHandles = (
+          nodeId: string,
+          role: Role,
+          reqs: Request[],
+        ): { assignments: Map<string, { side: Position; slot: number }>; counts: Record<Position, number> } => {
+          const assignments = new Map<string, { side: Position; slot: number }>()
+          const load: SideUsage = {
+            [Position.Top]: 0,
+            [Position.Right]: 0,
+            [Position.Bottom]: 0,
+            [Position.Left]: 0,
+          }
+
+          const sorted = [...reqs].sort((a, b) => a.edgeId.localeCompare(b.edgeId))
+          const overflow: Request[] = []
+
+          // Pass 1: use preferred side if available.
+          sorted.forEach((req) => {
+            if (load[req.preferred] < MAX_PER_SIDE) {
+              assignments.set(req.edgeId, { side: req.preferred, slot: load[req.preferred] })
+              load[req.preferred] += 1
+            } else {
+              overflow.push(req)
+            }
+          })
+
+          const spill: Request[] = []
+          // Pass 2: spill to any side with capacity (< MAX_PER_SIDE), choose the side with smallest load (tie by SIDE_ORDER).
+          overflow.forEach((req) => {
+            const candidates = SIDE_ORDER.filter((side) => load[side] < MAX_PER_SIDE)
+            if (candidates.length === 0) {
+              spill.push(req)
+              return
+            }
+            candidates.sort((a, b) => load[a] - load[b] || SIDE_ORDER.indexOf(a) - SIDE_ORDER.indexOf(b))
+            const chosen = candidates[0]
+            assignments.set(req.edgeId, { side: chosen, slot: load[chosen] })
+            load[chosen] += 1
+          })
+
+          // Pass 3: all sides at cap; share existing dots. Reuse slots modulo MAX_PER_SIDE, spread by lowest load.
+          spill.forEach((req) => {
+            const minLoad = Math.min(...SIDE_ORDER.map((s) => load[s]))
+            const candidates = SIDE_ORDER.filter((s) => load[s] === minLoad)
+            candidates.sort((a, b) => SIDE_ORDER.indexOf(a) - SIDE_ORDER.indexOf(b))
+            const chosen = candidates[0]
+            const slot = load[chosen] % MAX_PER_SIDE
+            assignments.set(req.edgeId, { side: chosen, slot })
+            load[chosen] += 1
+          })
+
+          const cappedCounts: Record<Position, number> = {
+            [Position.Top]: Math.min(MAX_PER_SIDE, load[Position.Top]),
+            [Position.Right]: Math.min(MAX_PER_SIDE, load[Position.Right]),
+            [Position.Bottom]: Math.min(MAX_PER_SIDE, load[Position.Bottom]),
+            [Position.Left]: Math.min(MAX_PER_SIDE, load[Position.Left]),
+          }
+
+          return { assignments, counts: cappedCounts }
+        }
+
+        // Initialize handle layout counts per node.
+        const handleCounts = new Map<
+          string,
+          { top: { source: number; target: number }; right: { source: number; target: number }; bottom: { source: number; target: number }; left: { source: number; target: number } }
+        >()
+        nodes.forEach((node) => {
+          handleCounts.set(node.id, {
+            top: { source: 0, target: 0 },
+            right: { source: 0, target: 0 },
+            bottom: { source: 0, target: 0 },
+            left: { source: 0, target: 0 },
+          })
+        })
+
+        const edgeHandles = new Map<string, { sourceHandleId?: string; targetHandleId?: string }>()
+
+        requests.forEach((reqs, key) => {
+          const [nodeId, role] = key.split('|') as [string, Role]
+          const { assignments, counts } = allocateHandles(nodeId, role, reqs)
+
+          // Persist layout counts (capped at MAX_PER_SIDE).
+          const layout = handleCounts.get(nodeId)
+          if (layout) {
+            ;[Position.Top, Position.Right, Position.Bottom, Position.Left].forEach((side) => {
+              const label = sideLabel(side)
+              layout[label as keyof typeof layout][role] = counts[side]
+            })
+          }
+
+          assignments.forEach((value, edgeId) => {
+            const totalSlots = Math.max(1, counts[value.side])
+            const id = `${sideLabel(value.side)}-${role}-${value.slot + 1}-of-${totalSlots}`
+            const existing = edgeHandles.get(edgeId) ?? {}
+            if (role === 'source') {
+              edgeHandles.set(edgeId, { ...existing, sourceHandleId: id })
+            } else {
+              edgeHandles.set(edgeId, { ...existing, targetHandleId: id })
+            }
+          })
+        })
 
         const edges: Edge<UseCaseEdgeData>[] = graph.edges.map((edge) => {
           const label = edgeLabelForType(edge.type)
@@ -296,11 +436,14 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
                 : edge.type === USE_CASE_EDGE_TYPE.EXTEND
                   ? '#a855f7'
                   : '#cbd5e1'
+          const handles = edgeHandles.get(edge.id)
           return {
             id: edge.id,
             source: edge.source,
             target: edge.target,
             type: 'floating',
+            ...(handles?.sourceHandleId ? { sourceHandle: handles.sourceHandleId, sourceHandleId: handles.sourceHandleId } : {}),
+            ...(handles?.targetHandleId ? { targetHandle: handles.targetHandleId, targetHandleId: handles.targetHandleId } : {}),
             data: {
               kind: edge.type,
               ...(label ? { label } : {}),
@@ -311,29 +454,13 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
         })
 
         // Inject handle layout into node data for rendering.
-        // Apply fixed base handle counts per node type/side/role for rendering.
         nodes.forEach((node) => {
-          const counts = {
-            top: { source: 0, target: 0 },
-            right: { source: 0, target: 0 },
-            bottom: { source: 0, target: 0 },
-            left: { source: 0, target: 0 },
-          }
-          ;(['top', 'right', 'bottom', 'left'] as const).forEach((sideKey: 'top' | 'right' | 'bottom' | 'left') => {
-            const side =
-              sideKey === 'top'
-                ? Position.Top
-                : sideKey === 'right'
-                  ? Position.Right
-                  : sideKey === 'bottom'
-                    ? Position.Bottom
-                    : Position.Left
-            counts[sideKey].source = baseHandleCounts(node.id, nodeTypeLookup, side, 'source')
-            counts[sideKey].target = baseHandleCounts(node.id, nodeTypeLookup, side, 'target')
-          })
-          node.data = {
-            ...node.data,
-            handleLayout: counts,
+          const counts = handleCounts.get(node.id)
+          if (counts) {
+            node.data = {
+              ...node.data,
+              handleLayout: counts,
+            }
           }
         })
 
@@ -369,21 +496,4 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
   }, [graph.edges, graph.nodes, rawNodeMap])
 
   return { result, isLoading, error }
-}
-const baseHandleCounts = (
-  nodeId: string,
-  nodeTypeLookup: Map<string, (typeof USE_CASE_NODE_TYPE)[keyof typeof USE_CASE_NODE_TYPE]>,
-  side: Position,
-  _role: 'source' | 'target',
-): number => {
-  const kind = nodeTypeLookup.get(nodeId)
-  if (!kind) return 0
-
-  if (kind === USE_CASE_NODE_TYPE.USE_CASE) {
-    // Pill/oval: 5 dots top/bottom, 1 dot left/right
-    if (side === Position.Top || side === Position.Bottom) return 5
-    return 1
-  }
-  // Rounded-rect (Actor/System): 3 dots per side
-  return 3
 }
