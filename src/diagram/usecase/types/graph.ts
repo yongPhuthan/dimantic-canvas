@@ -40,6 +40,12 @@ export interface RawUseCaseGraph {
 export interface UseCaseNodeData extends Record<string, unknown> {
   label: string
   kind: UseCaseNodeKind
+  handleLayout?: {
+    top: { source: number; target: number }
+    right: { source: number; target: number }
+    bottom: { source: number; target: number }
+    left: { source: number; target: number }
+  }
 }
 
 export interface UseCaseEdgeData extends Record<string, unknown> {

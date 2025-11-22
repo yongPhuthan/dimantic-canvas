@@ -43,11 +43,12 @@ export function FloatingEdge({
   id,
   source,
   target,
+  sourceHandleId,
+  targetHandleId,
   selected,
   data,
   style,
   markerStart,
-  markerEnd,
 }: EdgeProps<UseCaseReactFlowEdge>) {
   const nodes = useNodes() as FlowNodeWithPosition[]
   const { getInternalNode } = useReactFlow<UseCaseReactFlowNode, UseCaseReactFlowEdge>()
@@ -86,57 +87,6 @@ export function FloatingEdge({
     }
   }
 
-  const findHandle = (
-    nodeId: string,
-    type: AttachmentRole,
-    preferredPosition: Position,
-    referencePoint: XYPosition,
-  ): { point: XYPosition; position: Position } | null => {
-    const node = nodeMap.get(nodeId)
-    if (!node) return null
-
-    const internal = getInternalNode?.(nodeId) as InternalNode<UseCaseReactFlowNode> | undefined
-    type HandleBoundsEntry = {
-      x: number
-      y: number
-      width?: number
-      height?: number
-      position: Position
-    }
-    const bounds = (internal?.internals as { handleBounds?: Record<'source' | 'target', HandleBoundsEntry[]> } | undefined)
-      ?.handleBounds?.[type]
-    if (!bounds || bounds.length === 0) return null
-
-    const centers = bounds.map((h) => {
-      const origin = getAbsolutePosition(node)
-      return {
-        position: h.position,
-        point: {
-          x: origin.x + h.x + (h.width ?? 0) / 2,
-          y: origin.y + h.y + (h.height ?? 0) / 2,
-        },
-      }
-    })
-
-    const matchByPreference = centers.find((c) => c.position === preferredPosition)
-    if (matchByPreference) return matchByPreference
-
-    const nearest = centers.reduce((best, current) => {
-      const dx = current.point.x - referencePoint.x
-      const dy = current.point.y - referencePoint.y
-      const dist2 = dx * dx + dy * dy
-      if (!best || dist2 < best.dist2) {
-        return { entry: current, dist2 }
-      }
-      return best
-    }, null as { entry: { point: XYPosition; position: Position }; dist2: number } | null)
-
-    if (nearest) return nearest.entry
-
-    const origin = getAbsolutePosition(node)
-    return { position: preferredPosition, point: origin }
-  }
-
   const sourceCenter = getCenter(sourceNode)
   const targetCenter = getCenter(targetNode)
   const { sourcePosition, targetPosition } = pickPositions(sourceCenter, targetCenter)
@@ -151,7 +101,7 @@ export function FloatingEdge({
   }
 
   const offsets = useMemo(() => {
-    const list: Attachment[] = edges
+    const list = edges
       .map((edge) => {
         const sNode = nodeMap.get(edge.source)
         const tNode = nodeMap.get(edge.target)
@@ -183,7 +133,7 @@ export function FloatingEdge({
         return [sourceAttachment, targetAttachment]
       })
       .filter(Boolean)
-      .flat()
+      .flat() as Attachment[]
 
     const buckets = new Map<string, Attachment[]>()
     for (const att of list) {
@@ -206,22 +156,73 @@ export function FloatingEdge({
     return offsets
   }, [edges, getCenter, nodeMap])
 
-  const sourceHandleCenter = findHandle(source, 'source', sourcePosition, targetCenter)
-  const targetHandleCenter = findHandle(target, 'target', targetPosition, sourceCenter)
-
-  const sourceSideUsed = sourceHandleCenter?.position ?? sourcePosition
-  const targetSideUsed = targetHandleCenter?.position ?? targetPosition
-
   const sourceOffset = offsets.get(`${id}:source`) ?? 0.5
   const targetOffset = offsets.get(`${id}:target`) ?? 0.5
+
+  type HandleBoundsEntry = {
+    x: number
+    y: number
+    width?: number
+    height?: number
+    position: Position
+    id?: string
+  }
+
+  const getHandles = (nodeId: string, role: AttachmentRole): HandleBoundsEntry[] => {
+    const internal = getInternalNode?.(nodeId) as InternalNode<UseCaseReactFlowNode> | undefined
+    return (internal?.internals as { handleBounds?: Record<'source' | 'target', HandleBoundsEntry[]> } | undefined)
+      ?.handleBounds?.[role] ?? []
+  }
+
+  const pickHandle = (
+    nodeId: string,
+    role: AttachmentRole,
+    preferredPosition: Position,
+    referencePoint: XYPosition,
+    handleId?: string,
+  ): { point: XYPosition; side: Position } | null => {
+    const node = nodeMap.get(nodeId)
+    if (!node) return null
+    const handles = getHandles(nodeId, role)
+    if (handles.length === 0) return null
+
+    const origin = getAbsolutePosition(node)
+    const centers = handles.map((h) => ({
+      id: h.id,
+      side: h.position,
+      point: {
+        x: origin.x + h.x + (h.width ?? 0) / 2,
+        y: origin.y + h.y + (h.height ?? 0) / 2,
+      },
+    }))
+
+    if (handleId) {
+      const matchById = centers.find((c) => c.id === handleId)
+      if (matchById) return { point: matchById.point, side: matchById.side }
+    }
+
+    const bySide = centers.find((c) => c.side === preferredPosition)
+    if (bySide) return { point: bySide.point, side: bySide.side }
+
+    const nearest = centers.reduce((best, current) => {
+      const dx = current.point.x - referencePoint.x
+      const dy = current.point.y - referencePoint.y
+      const dist2 = dx * dx + dy * dy
+      if (!best || dist2 < best.dist2) {
+        return { entry: current, dist2 }
+      }
+      return best
+    }, null as { entry: { point: XYPosition; side: Position }; dist2: number } | null)
+
+    if (nearest) return { point: nearest.entry.point, side: nearest.entry.side }
+    return null
+  }
 
   const anchorPoint = (
     node: FlowNodeWithPosition,
     side: Position,
-    fallback: XYPosition | null,
     offset: number,
   ): XYPosition => {
-    if (fallback) return fallback
     const abs = getAbsolutePosition(node)
     const width = node.width ?? 0
     const height = node.height ?? 0
@@ -232,8 +233,14 @@ export function FloatingEdge({
     return { x: abs.x + width * offset, y: side === Position.Top ? abs.y : abs.y + height }
   }
 
-  const sourcePoint = anchorPoint(sourceNode, sourceSideUsed, sourceHandleCenter?.point ?? null, sourceOffset)
-  const targetPoint = anchorPoint(targetNode, targetSideUsed, targetHandleCenter?.point ?? null, targetOffset)
+  const sourcePick = pickHandle(source, 'source', sourcePosition, targetCenter, sourceHandleId ?? undefined)
+  const targetPick = pickHandle(target, 'target', targetPosition, sourceCenter, targetHandleId ?? undefined)
+
+  const sourceSideUsed = sourcePick?.side ?? sourcePosition
+  const targetSideUsed = targetPick?.side ?? targetPosition
+
+  const sourcePoint = sourcePick?.point ?? anchorPoint(sourceNode, sourceSideUsed, sourceOffset)
+  const targetPoint = targetPick?.point ?? anchorPoint(targetNode, targetSideUsed, targetOffset)
 
   const sourceX = sourcePoint.x
   const sourceY = sourcePoint.y

@@ -2,6 +2,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { UseCaseReactFlowNode } from '../../types/graph'
 
 export function ActorNode({ data, selected }: NodeProps<UseCaseReactFlowNode>) {
+  const layout = data.handleLayout
   const handleVisibility = selected
     ? 'opacity-100 pointer-events-auto scale-100'
     : 'opacity-0 pointer-events-none scale-75 group-hover:opacity-100 group-hover:pointer-events-auto group-hover:scale-100'
@@ -9,6 +10,40 @@ export function ActorNode({ data, selected }: NodeProps<UseCaseReactFlowNode>) {
   const handleBase =
     'h-3 w-3 rounded-full border-2 border-white bg-sky-400 shadow ring-2 ring-white transition duration-150 ' +
     handleVisibility
+
+  const spread = (index: number, total: number) => `${((index + 1) / (total + 1)) * 100}%`
+  const sideLabel = (side: Position) =>
+    side === Position.Top ? 'top' : side === Position.Right ? 'right' : side === Position.Bottom ? 'bottom' : 'left'
+
+  const renderHandles = (side: Position, type: 'source' | 'target', count: number) => {
+    if (count <= 0) return null
+    return Array.from({ length: count }).map((_, idx) => {
+      const offset = spread(idx, count)
+      const id = `${sideLabel(side)}-${type}-${idx + 1}-of-${count}`
+      const style =
+        side === Position.Left || side === Position.Right
+          ? { top: offset, transform: 'translate(-50%, -50%)' }
+          : { left: offset, transform: 'translate(-50%, -50%)' }
+      return (
+        <Handle
+          key={id}
+          id={id}
+          type={type}
+          position={side}
+          className={`${handleBase} ${
+            side === Position.Top
+              ? '-mt-1'
+              : side === Position.Bottom
+                ? '-mb-1'
+                : side === Position.Left
+                  ? '-ml-1'
+                  : '-mr-1'
+          }`}
+          style={style}
+        />
+      )
+    })
+  }
 
   return (
     <div
@@ -22,31 +57,18 @@ export function ActorNode({ data, selected }: NodeProps<UseCaseReactFlowNode>) {
       </div>
       <div className="text-center text-sm font-semibold leading-tight">{data.label}</div>
 
-      {/* Visible handles on all sides for flexible connections */}
-      <Handle
-        id="actor-top"
-        type="target"
-        position={Position.Top}
-        className={`${handleBase} -mt-1`}
-      />
-      <Handle
-        id="actor-right"
-        type="source"
-        position={Position.Right}
-        className={`${handleBase} -mr-1`}
-      />
-      <Handle
-        id="actor-bottom"
-        type="target"
-        position={Position.Bottom}
-        className={`${handleBase} -mb-1`}
-      />
-      <Handle
-        id="actor-left"
-        type="source"
-        position={Position.Left}
-        className={`${handleBase} -ml-1`}
-      />
+      {/* Dynamic handles per side using percentage offsets */}
+      {renderHandles(Position.Top, 'target', layout?.top.target ?? 0)}
+      {renderHandles(Position.Top, 'source', layout?.top.source ?? 0)}
+
+      {renderHandles(Position.Right, 'source', layout?.right.source ?? 0)}
+      {renderHandles(Position.Right, 'target', layout?.right.target ?? 0)}
+
+      {renderHandles(Position.Bottom, 'target', layout?.bottom.target ?? 0)}
+      {renderHandles(Position.Bottom, 'source', layout?.bottom.source ?? 0)}
+
+      {renderHandles(Position.Left, 'source', layout?.left.source ?? 0)}
+      {renderHandles(Position.Left, 'target', layout?.left.target ?? 0)}
     </div>
   )
 }

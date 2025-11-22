@@ -1,4 +1,4 @@
-import { MarkerType, type Edge, type Node } from '@xyflow/react'
+import { MarkerType, Position, type Edge, type Node } from '@xyflow/react'
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import ELK from 'elkjs/lib/elk.bundled.js'
 
@@ -186,75 +186,49 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
     // Pre-compute sizes per node (bottom-up for boundaries) so ELK can auto-grow around labels and children.
     const nodeSizeCache = new Map<string, { width: number; height: number }>()
 
-    const baseTrees: ElkLayoutNode[] = (() => {
-      const children = new Map<string, RawGraphNode[]>()
-      graph.nodes.forEach((node) => {
-        if (!node.parentId) return
-        const group = children.get(node.parentId) ?? []
-        group.push(node)
-        children.set(node.parentId, group)
-      })
+    const computeSize = (node: RawGraphNode): { width: number; height: number } => {
+      const cached = nodeSizeCache.get(node.id)
+      if (cached) return cached
 
-      const computeSize = (node: RawGraphNode): { width: number; height: number } => {
-        const cached = nodeSizeCache.get(node.id)
-        if (cached) return cached
-
-        if (node.type === USE_CASE_NODE_TYPE.USE_CASE) {
-          const width = labelBasedWidth(node.label, 180, 340)
-          const size = { width, height: 96 }
-          nodeSizeCache.set(node.id, size)
-          return size
-        }
-
-        if (node.type === USE_CASE_NODE_TYPE.ACTOR) {
-          const width = labelBasedWidth(node.label, 140, 220)
-          const size = { width, height: 144 }
-          nodeSizeCache.set(node.id, size)
-          return size
-        }
-
-        if (node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY) {
-          const kids = children.get(node.id) ?? []
-          const kidSizes = kids.map(computeSize)
-          const maxChildWidth = kidSizes.length > 0 ? Math.max(...kidSizes.map((k) => k.width)) : 0
-          const totalChildHeight =
-            kidSizes.reduce((sum, k) => sum + k.height, 0) +
-            Math.max(0, kidSizes.length - 1) * CHILD_VERTICAL_GAP
-
-          const width = Math.max(
-            DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].width,
-            maxChildWidth + 240,
-          )
-          const height = Math.max(
-            DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].height,
-            totalChildHeight + 120,
-          )
-          const size = { width, height }
-          nodeSizeCache.set(node.id, size)
-          return size
-        }
-
-        const fallback = DEFAULT_NODE_SIZE[node.type] ?? { width: 200, height: 120 }
-        nodeSizeCache.set(node.id, fallback)
-        return fallback
+      if (node.type === USE_CASE_NODE_TYPE.USE_CASE) {
+        const width = labelBasedWidth(node.label, 180, 340)
+        const size = { width, height: 96 }
+        nodeSizeCache.set(node.id, size)
+        return size
       }
 
-      // Build nested ELK nodes recursively so SYSTEM_BOUNDARY can wrap children.
-      const buildElkNode = (node: RawGraphNode): ElkLayoutNode => {
+      if (node.type === USE_CASE_NODE_TYPE.ACTOR) {
+        const width = labelBasedWidth(node.label, 140, 220)
+        const size = { width, height: 144 }
+        nodeSizeCache.set(node.id, size)
+        return size
+      }
+
+      if (node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY) {
+        const size = {
+          width: DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].width,
+          height: DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].height,
+        }
+        nodeSizeCache.set(node.id, size)
+        return size
+      }
+
+      const fallback = DEFAULT_NODE_SIZE[node.type] ?? { width: 200, height: 120 }
+      nodeSizeCache.set(node.id, fallback)
+      return fallback
+    }
+
+    const baseTrees: ElkLayoutNode[] = graph.nodes
+      .map((node) => {
         const size = computeSize(node)
         return {
           id: node.id,
           width: size.width,
           height: size.height,
           labels: [{ text: node.label }],
-          children: (children.get(node.id) ?? []).map(buildElkNode),
+          children: [],
         }
-      }
-
-      return graph.nodes
-        .filter((node) => !node.parentId)
-        .map(buildElkNode)
-    })()
+      })
 
     const elkGraph: ElkGraphInput = {
       id: 'root',
@@ -277,6 +251,39 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
           flattenElkToReactFlow(child, rawNodeMap, nodes),
         )
         layoutChildrenGrid(nodes)
+
+        // Build quick lookup for centers (absolute) including parent offsets.
+        const nodeMap = new Map(nodes.map((n) => [n.id, n]))
+        const getAbsolute = (node: Node<UseCaseNodeData>): { x: number; y: number } => {
+          let x = node.position.x
+          let y = node.position.y
+          let parentId = node.parentId
+          while (parentId) {
+            const parent = nodeMap.get(parentId)
+            if (!parent) break
+            x += parent.position.x
+            y += parent.position.y
+            parentId = parent.parentId
+          }
+          return { x, y }
+        }
+
+        const centers = new Map(
+          nodes.map((n) => {
+            const abs = getAbsolute(n)
+            return [
+              n.id,
+              {
+                x: abs.x + (n.width ?? 0) / 2,
+                y: abs.y + (n.height ?? 0) / 2,
+                width: n.width ?? 0,
+                height: n.height ?? 0,
+              },
+            ]
+          }),
+        )
+
+        const nodeTypeLookup = new Map(graph.nodes.map((n) => [n.id, n.type]))
 
         const edges: Edge<UseCaseEdgeData>[] = graph.edges.map((edge) => {
           const label = edgeLabelForType(edge.type)
@@ -303,10 +310,50 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
           }
         })
 
+        // Inject handle layout into node data for rendering.
+        // Apply fixed base handle counts per node type/side/role for rendering.
+        nodes.forEach((node) => {
+          const counts = {
+            top: { source: 0, target: 0 },
+            right: { source: 0, target: 0 },
+            bottom: { source: 0, target: 0 },
+            left: { source: 0, target: 0 },
+          }
+          ;(['top', 'right', 'bottom', 'left'] as const).forEach((sideKey: 'top' | 'right' | 'bottom' | 'left') => {
+            const side =
+              sideKey === 'top'
+                ? Position.Top
+                : sideKey === 'right'
+                  ? Position.Right
+                  : sideKey === 'bottom'
+                    ? Position.Bottom
+                    : Position.Left
+            counts[sideKey].source = baseHandleCounts(node.id, nodeTypeLookup, side, 'source')
+            counts[sideKey].target = baseHandleCounts(node.id, nodeTypeLookup, side, 'target')
+          })
+          node.data = {
+            ...node.data,
+            handleLayout: counts,
+          }
+        })
+
         setResult({ nodes, edges })
       } catch (err) {
         if (!cancelled) {
-          setError(err as Error)
+          // Emit to console to aid debugging runtime layout issues.
+          // eslint-disable-next-line no-console
+          console.error('useAutoLayout error', err)
+          try {
+            // @ts-expect-error: debug helper
+            if (typeof window !== 'undefined') window.__lastLayoutError = err
+          } catch {
+            /* noop */
+          }
+          const message =
+            (err as Error)?.stack ??
+            (err as Error)?.message ??
+            (typeof err === 'string' ? err : JSON.stringify(err))
+          setError(new Error(String(message)))
           setResult({ nodes: [], edges: [] })
         }
       } finally {
@@ -322,4 +369,21 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
   }, [graph.edges, graph.nodes, rawNodeMap])
 
   return { result, isLoading, error }
+}
+const baseHandleCounts = (
+  nodeId: string,
+  nodeTypeLookup: Map<string, (typeof USE_CASE_NODE_TYPE)[keyof typeof USE_CASE_NODE_TYPE]>,
+  side: Position,
+  _role: 'source' | 'target',
+): number => {
+  const kind = nodeTypeLookup.get(nodeId)
+  if (!kind) return 0
+
+  if (kind === USE_CASE_NODE_TYPE.USE_CASE) {
+    // Pill/oval: 5 dots top/bottom, 1 dot left/right
+    if (side === Position.Top || side === Position.Bottom) return 5
+    return 1
+  }
+  // Rounded-rect (Actor/System): 3 dots per side
+  return 3
 }

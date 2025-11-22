@@ -19,7 +19,7 @@ import { FloatingEdge } from './edges/FloatingEdge'
 import { ActorNode } from './nodes/ActorNode'
 import { SystemNode } from './nodes/SystemNode'
 import { UseCaseNode } from './nodes/UseCaseNode'
-import { mockUseCaseGraph } from '../mock/useCaseGraph'
+import { mockDenseConnectionsGraph } from '../mock/useCaseGraphDense'
 import { useAutoLayout } from '../hooks/useAutoLayout'
 import { USE_CASE_NODE_TYPE, type UseCaseNodeData } from '../types/graph'
 
@@ -32,7 +32,7 @@ const nodeTypes = {
 const edgeTypes = { floating: FloatingEdge }
 
 function DiagramInner() {
-  const { result, isLoading, error } = useAutoLayout(mockUseCaseGraph)
+  const { result, isLoading, error } = useAutoLayout(mockDenseConnectionsGraph)
   const { fitView } = useReactFlow()
   const [nodes, setNodes] = useNodesState(result.nodes)
   const handleNodesChange = useCallback(
