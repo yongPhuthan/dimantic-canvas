@@ -1,4 +1,3 @@
-นี่คือเอกสาร **PRD (Product Requirements Document)** ที่ได้รับการปรับปรุงเนื้อหาให้เปลี่ยนจาก **PixiJS** มาเป็น **React Flow 12 (@xyflow/react)** โดยยังคงรักษา Concept หลักคือ **"Semantic-Driven / No-Coordinate"** (รับ JSON ดิบจาก Neo4j แล้วระบบจัดท่าให้เอง) ครับ
 
 ---
 

@@ -13,6 +13,9 @@ import { useMemo } from 'react'
 import { USE_CASE_EDGE_TYPE, type UseCaseReactFlowEdge, type UseCaseReactFlowNode } from '../../types/graph'
 
 type FlowNodeWithPosition = UseCaseReactFlowNode & { parentId?: string }
+type AttachmentRole = 'source' | 'target'
+
+const SPREAD_PADDING = 0.08 // keep anchors away from extreme corners
 
 function pickPositions(
   sourceCenter: { x: number; y: number },
@@ -73,9 +76,19 @@ export function FloatingEdge({
     return null
   }
 
+  const edges = store.getState().edges as UseCaseReactFlowEdge[]
+
+  const getCenter = (node: FlowNodeWithPosition) => {
+    const abs = getAbsolutePosition(node)
+    return {
+      x: abs.x + (node.width ?? 0) / 2,
+      y: abs.y + (node.height ?? 0) / 2,
+    }
+  }
+
   const findHandle = (
     nodeId: string,
-    type: 'source' | 'target',
+    type: AttachmentRole,
     preferredPosition: Position,
     referencePoint: XYPosition,
   ): { point: XYPosition; position: Position } | null => {
@@ -124,18 +137,74 @@ export function FloatingEdge({
     return { position: preferredPosition, point: origin }
   }
 
-  // Derive attachment sides based on relative positions to avoid ugly overlaps.
-  const sourceAbs = getAbsolutePosition(sourceNode)
-  const targetAbs = getAbsolutePosition(targetNode)
-  const sourceCenter = {
-    x: sourceAbs.x + (sourceNode.width ?? 0) / 2,
-    y: sourceAbs.y + (sourceNode.height ?? 0) / 2,
-  }
-  const targetCenter = {
-    x: targetAbs.x + (targetNode.width ?? 0) / 2,
-    y: targetAbs.y + (targetNode.height ?? 0) / 2,
-  }
+  const sourceCenter = getCenter(sourceNode)
+  const targetCenter = getCenter(targetNode)
   const { sourcePosition, targetPosition } = pickPositions(sourceCenter, targetCenter)
+
+  // For each node/side, spread multiple edges along that side to avoid stacking on a single dot.
+  type Attachment = {
+    edgeId: string
+    nodeId: string
+    role: AttachmentRole
+    side: Position
+    axisValue: number
+  }
+
+  const offsets = useMemo(() => {
+    const list: Attachment[] = edges
+      .map((edge) => {
+        const sNode = nodeMap.get(edge.source)
+        const tNode = nodeMap.get(edge.target)
+        if (!sNode || !tNode) return null
+
+        const sCenter = getCenter(sNode)
+        const tCenter = getCenter(tNode)
+        const { sourcePosition: sSide, targetPosition: tSide } = pickPositions(sCenter, tCenter)
+
+        const axisForSide = (side: Position, otherCenter: { x: number; y: number }) =>
+          side === Position.Left || side === Position.Right ? otherCenter.y : otherCenter.x
+
+        const sourceAttachment: Attachment = {
+          edgeId: edge.id,
+          nodeId: edge.source,
+          role: 'source',
+          side: sSide,
+          axisValue: axisForSide(sSide, tCenter),
+        }
+
+        const targetAttachment: Attachment = {
+          edgeId: edge.id,
+          nodeId: edge.target,
+          role: 'target',
+          side: tSide,
+          axisValue: axisForSide(tSide, sCenter),
+        }
+
+        return [sourceAttachment, targetAttachment]
+      })
+      .filter(Boolean)
+      .flat()
+
+    const buckets = new Map<string, Attachment[]>()
+    for (const att of list) {
+      const key = `${att.nodeId}:${att.side}:${att.role}`
+      const arr = buckets.get(key) ?? []
+      arr.push(att)
+      buckets.set(key, arr)
+    }
+
+    const offsets = new Map<string, number>()
+    for (const [, bucket] of buckets) {
+      bucket.sort((a, b) => a.axisValue - b.axisValue)
+      const n = bucket.length
+      bucket.forEach((att, index) => {
+        const normalized = n === 1 ? 0.5 : (index + 1) / (n + 1)
+        const padded = SPREAD_PADDING + normalized * (1 - SPREAD_PADDING * 2)
+        offsets.set(`${att.edgeId}:${att.role}`, padded)
+      })
+    }
+    return offsets
+  }, [edges, getCenter, nodeMap])
 
   const sourceHandleCenter = findHandle(source, 'source', sourcePosition, targetCenter)
   const targetHandleCenter = findHandle(target, 'target', targetPosition, sourceCenter)
@@ -143,37 +212,33 @@ export function FloatingEdge({
   const sourceSideUsed = sourceHandleCenter?.position ?? sourcePosition
   const targetSideUsed = targetHandleCenter?.position ?? targetPosition
 
-  const sourceX =
-    sourceHandleCenter?.point.x ??
-    (sourceSideUsed === Position.Left
-      ? sourceCenter.x - (sourceNode.width ?? 0) / 2
-      : sourceSideUsed === Position.Right
-        ? sourceCenter.x + (sourceNode.width ?? 0) / 2
-        : sourceCenter.x)
+  const sourceOffset = offsets.get(`${id}:source`) ?? 0.5
+  const targetOffset = offsets.get(`${id}:target`) ?? 0.5
 
-  const targetX =
-    targetHandleCenter?.point.x ??
-    (targetSideUsed === Position.Left
-      ? targetCenter.x - (targetNode.width ?? 0) / 2
-      : targetSideUsed === Position.Right
-        ? targetCenter.x + (targetNode.width ?? 0) / 2
-        : targetCenter.x)
+  const anchorPoint = (
+    node: FlowNodeWithPosition,
+    side: Position,
+    fallback: XYPosition | null,
+    offset: number,
+  ): XYPosition => {
+    if (fallback) return fallback
+    const abs = getAbsolutePosition(node)
+    const width = node.width ?? 0
+    const height = node.height ?? 0
 
-  const sourceY =
-    sourceHandleCenter?.point.y ??
-    (sourceSideUsed === Position.Top
-      ? sourceCenter.y - (sourceNode.height ?? 0) / 2
-      : sourceSideUsed === Position.Bottom
-        ? sourceCenter.y + (sourceNode.height ?? 0) / 2
-        : sourceCenter.y)
+    if (side === Position.Left || side === Position.Right) {
+      return { x: side === Position.Left ? abs.x : abs.x + width, y: abs.y + height * offset }
+    }
+    return { x: abs.x + width * offset, y: side === Position.Top ? abs.y : abs.y + height }
+  }
 
-  const targetY =
-    targetHandleCenter?.point.y ??
-    (targetSideUsed === Position.Top
-      ? targetCenter.y - (targetNode.height ?? 0) / 2
-      : targetSideUsed === Position.Bottom
-        ? targetCenter.y + (targetNode.height ?? 0) / 2
-        : targetCenter.y)
+  const sourcePoint = anchorPoint(sourceNode, sourceSideUsed, sourceHandleCenter?.point ?? null, sourceOffset)
+  const targetPoint = anchorPoint(targetNode, targetSideUsed, targetHandleCenter?.point ?? null, targetOffset)
+
+  const sourceX = sourcePoint.x
+  const sourceY = sourcePoint.y
+  const targetX = targetPoint.x
+  const targetY = targetPoint.y
 
   const [path, labelX, labelY] = getSmoothStepPath({
     sourceX,
