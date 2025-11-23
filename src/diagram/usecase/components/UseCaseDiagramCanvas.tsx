@@ -15,7 +15,7 @@ import { useCallback, useEffect } from 'react'
 
 import '@xyflow/react/dist/style.css'
 
-import { FloatingEdge } from './edges/FloatingEdge'
+import { EdgeModel } from './edges/FloatingEdge'
 import { ActorNode } from './nodes/ActorNode'
 import { SystemNode } from './nodes/SystemNode'
 import { UseCaseNode } from './nodes/UseCaseNode'
@@ -29,7 +29,7 @@ const nodeTypes = {
   SYSTEM_BOUNDARY: SystemNode,
 }
 
-const edgeTypes = { floating: FloatingEdge }
+const edgeTypes = { floating: EdgeModel }
 
 function DiagramInner() {
   const { result, isLoading, error } = useAutoLayout(mockDenseConnectionsGraph)

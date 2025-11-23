@@ -53,14 +53,17 @@ const LAYOUT_OPTIONS = {
   // Layered layout keeps actors on the left and flows toward use cases on the right.
   'org.eclipse.elk.algorithm': 'layered',
   'org.eclipse.elk.direction': 'RIGHT',
-  // Increase intra-layer spacing to avoid overlaps when labels are long.
-  'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '96',
-  'org.eclipse.elk.spacing.nodeNode': '72',
-  'org.eclipse.elk.spacing.edgeEdge': '48',
+  // Increase spacing to reduce edge/node congestion for readability.
+  'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '120',
+  'org.eclipse.elk.spacing.nodeNode': '96',
+  'org.eclipse.elk.spacing.edgeEdge': '72',
   // Ensure compound (parent/child) nodes grow with children.
   'org.eclipse.elk.hierarchyHandling': 'INCLUDE_CHILDREN',
   // Add breathing room inside boundaries.
-  'org.eclipse.elk.padding': '[24,24,24,24]',
+  'org.eclipse.elk.padding': '[32,32,32,32]',
+  // Encourage routed edges to bend/polyline to avoid collisions.
+  'org.eclipse.elk.layered.edgeRouting': 'POLYLINE',
+  'org.eclipse.elk.layered.edgeSpacingFactor': '1.2',
 } as const
 
 // Run ELK on the main thread; avoids bundler worker warnings in dev and keeps the mock graph simple.
@@ -157,12 +160,11 @@ function edgeLabelForType(kind: UseCaseEdgeKind) {
 
 function edgeStyleForType(kind: UseCaseEdgeKind): CSSProperties {
   if (kind === USE_CASE_EDGE_TYPE.ASSOCIATION) {
-    return { strokeWidth: 2, stroke: '#e2e8f0' }
+    return { strokeWidth: 2, stroke: '#cbd5e1' }
   }
   return {
     strokeWidth: 2,
-    strokeDasharray: '6 6',
-    stroke: kind === USE_CASE_EDGE_TYPE.INCLUDE ? '#38bdf8' : '#a855f7',
+    stroke: '#cbd5e1',
   }
 }
 
@@ -429,16 +431,14 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
         })
 
         const edges: Edge<UseCaseEdgeData>[] = graph.edges.map((edge) => {
-          const label = edgeLabelForType(edge.type)
-          const style = edgeStyleForType(edge.type)
-          const strokeColor =
-            typeof style.stroke === 'string'
-              ? style.stroke
-              : edge.type === USE_CASE_EDGE_TYPE.INCLUDE
-                ? '#38bdf8'
-                : edge.type === USE_CASE_EDGE_TYPE.EXTEND
-                  ? '#a855f7'
-                  : '#cbd5e1'
+          const sourceParent = rawNodeMap.get(edge.source)?.parentId
+          const targetParent = rawNodeMap.get(edge.target)?.parentId
+          const isInternal = sourceParent && targetParent && sourceParent === targetParent
+
+          // Internal edges drop labels/dashed; use unified style.
+          const label = '' // temporarily hide labels (<<include>>, <<extend>>) for uniform edges
+          const style: CSSProperties = { strokeWidth: 2, stroke: '#cbd5e1' }
+
           const handles = edgeHandles.get(edge.id)
           return {
             id: edge.id,
@@ -451,7 +451,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
               kind: edge.type,
               ...(label ? { label } : {}),
             },
-            markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: strokeColor },
+            markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: '#cbd5e1' },
             style,
           }
         })
