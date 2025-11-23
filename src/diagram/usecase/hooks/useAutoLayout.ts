@@ -3,11 +3,9 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import ELK from 'elkjs/lib/elk.bundled.js'
 
 import {
-  USE_CASE_EDGE_TYPE,
   USE_CASE_NODE_TYPE,
   type RawGraphNode,
   type RawUseCaseGraph,
-  type UseCaseEdgeKind,
   type UseCaseEdgeData,
   type UseCaseNodeData,
 } from '../types/graph'
@@ -42,6 +40,7 @@ type ElkGraphInput = {
 
 type ElkLayoutResult = ElkLayoutNode & { children?: ElkLayoutNode[] }
 
+// Base square size for all nodes; will expand equally (width=height) based on label length.
 const BASE_NODE_SIZE = 144
 const DEFAULT_NODE_SIZE = {
   [USE_CASE_NODE_TYPE.ACTOR]: { width: BASE_NODE_SIZE, height: BASE_NODE_SIZE },
@@ -54,16 +53,19 @@ const LAYOUT_OPTIONS = {
   'org.eclipse.elk.algorithm': 'layered',
   'org.eclipse.elk.direction': 'RIGHT',
   // Increase spacing to reduce edge/node congestion for readability.
-  'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '120',
-  'org.eclipse.elk.spacing.nodeNode': '96',
-  'org.eclipse.elk.spacing.edgeEdge': '72',
+  'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '180', // vertical gap between layers
+  'org.eclipse.elk.spacing.nodeNode': '160', // intra-layer node spacing
+  'org.eclipse.elk.spacing.edgeEdge': '110', // edge-edge spacing
   // Ensure compound (parent/child) nodes grow with children.
   'org.eclipse.elk.hierarchyHandling': 'INCLUDE_CHILDREN',
   // Add breathing room inside boundaries.
-  'org.eclipse.elk.padding': '[32,32,32,32]',
+  'org.eclipse.elk.padding': '[52,52,52,52]',
   // Encourage routed edges to bend/polyline to avoid collisions.
-  'org.eclipse.elk.layered.edgeRouting': 'POLYLINE',
-  'org.eclipse.elk.layered.edgeSpacingFactor': '1.2',
+  'org.eclipse.elk.layered.edgeRouting': 'ORTHOGONAL',
+  'org.eclipse.elk.layered.edgeSpacingFactor': '1.8',
+  // Reserve space for labels.
+  'org.eclipse.elk.spacing.labelNode': '32',
+  'org.eclipse.elk.spacing.labelLabel': '32',
 } as const
 
 // Run ELK on the main thread; avoids bundler worker warnings in dev and keeps the mock graph simple.
@@ -71,10 +73,8 @@ const elk = new ELK()
 
 const CHAR_WIDTH = 8
 const PILL_PADDING = 48
-const CHILD_VERTICAL_GAP = 24
 const STACK_MARGIN_X = 48
 const STACK_MARGIN_Y = 48
-const STACK_GAP_VERTICAL = 32
 const GRID_GAP_X = 32
 const GRID_GAP_Y = 32
 const BOUNDARY_MIN_WIDTH = BASE_NODE_SIZE
@@ -152,21 +152,7 @@ function layoutChildrenGrid(nodes: Node<UseCaseNodeData>[]) {
     })
 }
 
-function edgeLabelForType(kind: UseCaseEdgeKind) {
-  if (kind === USE_CASE_EDGE_TYPE.INCLUDE) return '<<include>>'
-  if (kind === USE_CASE_EDGE_TYPE.EXTEND) return '<<extend>>'
-  return ''
-}
 
-function edgeStyleForType(kind: UseCaseEdgeKind): CSSProperties {
-  if (kind === USE_CASE_EDGE_TYPE.ASSOCIATION) {
-    return { strokeWidth: 2, stroke: '#cbd5e1' }
-  }
-  return {
-    strokeWidth: 2,
-    stroke: '#cbd5e1',
-  }
-}
 
 export function useAutoLayout(graph: RawUseCaseGraph): {
   result: UseCaseLayoutResult
@@ -182,6 +168,32 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
     () => new Map<string, RawGraphNode>(graph.nodes.map((node) => [node.id, node])),
     [graph.nodes],
   )
+
+  // Pre-layout hints: force actors to the far left column and bias anchors; others in a coarse grid.
+  const positionHints = useMemo(() => {
+    const hints = new Map<string, { x: number; y: number }>()
+    const actors = graph.nodes.filter((n) => n.type === USE_CASE_NODE_TYPE.ACTOR)
+    const others = graph.nodes.filter((n) => n.type !== USE_CASE_NODE_TYPE.ACTOR)
+    actors.forEach((actor, idx) => hints.set(actor.id, { x: -400, y: idx * 320 }))
+    const cols = Math.max(1, Math.ceil(Math.sqrt(others.length)))
+    const cell = 320
+    others.forEach((node, idx) => {
+      const col = idx % cols
+      const row = Math.floor(idx / cols)
+      hints.set(node.id, { x: col * cell, y: row * cell })
+    })
+    return hints
+  }, [graph.nodes])
+
+  const anchorHints = useMemo(() => {
+    const hints = new Map<string, Position>()
+    graph.nodes.forEach((node) => {
+      if (node.type === USE_CASE_NODE_TYPE.ACTOR) {
+        hints.set(node.id, Position.Right)
+      }
+    })
+    return hints
+  }, [graph.nodes])
 
   const nodeVisuals = useMemo(
     () =>
@@ -226,10 +238,12 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
     const baseTrees: ElkLayoutNode[] = graph.nodes
       .map((node) => {
         const size = computeSize(node)
+        const posHint = positionHints.get(node.id)
         return {
           id: node.id,
           width: size.width,
           height: size.height,
+          ...(posHint ? { x: posHint.x, y: posHint.y } : {}),
           labels: [{ text: node.label }],
           children: [],
         }
@@ -288,6 +302,15 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
           }),
         )
 
+        // Bounding box for border biasing.
+        const allCenters = Array.from(centers.values())
+        const minX = Math.min(...allCenters.map((c) => c.x))
+        const maxX = Math.max(...allCenters.map((c) => c.x))
+        const minY = Math.min(...allCenters.map((c) => c.y))
+        const maxY = Math.max(...allCenters.map((c) => c.y))
+        const marginX = Math.max(1, (maxX - minX) * 0.25)
+        const marginY = Math.max(1, (maxY - minY) * 0.25)
+
         // Collect preferred side per node/role for deterministic assignment with caps.
         type Role = 'source' | 'target'
         type NodeRoleKey = `${string}|${Role}`
@@ -306,6 +329,23 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
           return { aSide, bSide }
         }
 
+        const biasSideToBorder = (nodeId: string, suggested: Position): Position => {
+          const hinted = anchorHints.get(nodeId)
+          if (hinted) return hinted
+          const c = centers.get(nodeId)
+          if (!c) return suggested
+          const distLeft = c.x - minX
+          const distRight = maxX - c.x
+          const distTop = c.y - minY
+          const distBottom = maxY - c.y
+          const nearest = Math.min(distLeft, distRight, distTop, distBottom)
+          if (nearest === distLeft && distLeft <= marginX) return Position.Left
+          if (nearest === distRight && distRight <= marginX) return Position.Right
+          if (nearest === distTop && distTop <= marginY) return Position.Top
+          if (nearest === distBottom && distBottom <= marginY) return Position.Bottom
+          return suggested
+        }
+
         graph.edges.forEach((edge) => {
           const a = centers.get(edge.source)
           const b = centers.get(edge.target)
@@ -317,8 +357,8 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
             arr.push({ edgeId: edge.id, preferred: side })
             requests.set(key, arr)
           }
-          addRequest(edge.source, aSide, 'source')
-          addRequest(edge.target, bSide, 'target')
+          addRequest(edge.source, biasSideToBorder(edge.source, aSide), 'source')
+          addRequest(edge.target, biasSideToBorder(edge.target, bSide), 'target')
         })
 
         // Allocate handles with cap per side, spill to other sides, then share when all sides used.
@@ -329,9 +369,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
 
         type SideUsage = Record<Position, number>
         const allocateHandles = (
-          nodeId: string,
-          role: Role,
-          reqs: Request[],
+          _nodeId: string, _role: string, reqs: Request[],
         ): { assignments: Map<string, { side: Position; slot: number }>; counts: Record<Position, number> } => {
           const assignments = new Map<string, { side: Position; slot: number }>()
           const load: SideUsage = {
@@ -431,9 +469,6 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
         })
 
         const edges: Edge<UseCaseEdgeData>[] = graph.edges.map((edge) => {
-          const sourceParent = rawNodeMap.get(edge.source)?.parentId
-          const targetParent = rawNodeMap.get(edge.target)?.parentId
-          const isInternal = sourceParent && targetParent && sourceParent === targetParent
 
           // Internal edges drop labels/dashed; use unified style.
           const label = '' // temporarily hide labels (<<include>>, <<extend>>) for uniform edges

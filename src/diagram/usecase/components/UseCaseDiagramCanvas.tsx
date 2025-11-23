@@ -6,24 +6,23 @@ import {
   ReactFlow,
   ReactFlowProvider,
   applyNodeChanges,
-  type Node,
-  useReactFlow,
-  useNodesState,
-  type NodeChange,
-  applyEdgeChanges,
   useEdgesState,
+  useNodesState,
+  useReactFlow,
+  type Node,
+  type NodeChange
 } from '@xyflow/react'
 import { useCallback, useEffect } from 'react'
 
 import '@xyflow/react/dist/style.css'
 
+import { useAutoLayout } from '../hooks/useAutoLayout'
+import { mockDenseConnectionsGraph } from '../mock/useCaseGraphDense'
+import { type UseCaseNodeData } from '../types/graph'
 import { EdgeModel } from './edges/FloatingEdge'
 import { ActorNode } from './nodes/ActorNode'
 import { SystemNode } from './nodes/SystemNode'
 import { UseCaseNode } from './nodes/UseCaseNode'
-import { mockDenseConnectionsGraph } from '../mock/useCaseGraphDense'
-import { useAutoLayout } from '../hooks/useAutoLayout'
-import { USE_CASE_NODE_TYPE, type UseCaseNodeData } from '../types/graph'
 
 const nodeTypes = {
   ACTOR: ActorNode,

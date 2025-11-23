@@ -113,3 +113,15 @@
 2.  **Native DOM Events:** ใส่ปุ่ม, Input, หรือ Tooltip บน Node ได้ง่ายเหมือนเขียนเว็บปกติ (ไม่ต้องทำ Raycasting เพื่อหาจุดคลิกแบบ PixiJS)
 3.  **Group/Parenting:** React Flow รองรับ `parentId` และ `extent: 'parent'` ซึ่งเหมาะมากกับ C4 Model (Container/Component)
 4.  **Maintenance:** โค้ดจะสั้นลงประมาณ 40-50% เพราะตัดส่วน Event Handling, Drag System, Zoom System ออกไปใช้ของ Library แทน
+
+---
+
+## อัปเดตความคืบหน้า (Implementation Notes)
+
+- Node รูปทรงเดียว (NodeModel) ใช้กับ Actor/UseCase/Boundary (SubgraphNodeModel สำหรับ boundary โปร่งใส, dashed, resize ได้)
+- EdgeModel เดียวทั้งระบบ: เส้น solid, marker arrow ขยาย, label อยู่ชั้นบนสุด (z-index สูง) คลิกแก้ข้อความได้
+- Layout กลางใช้ `useAutoLayout` เพียงตัวเดียว (รวม pre-layout hints): actor ถูก bias ไปคอลัมน์ซ้าย/ขวา, node อื่นวางกริดหยาบก่อน ELK
+- ELK ตั้ง spacing/padding สูง + orthogonal routing + label spacing เพื่อหลีกเลี่ยงเส้น/label เบียด; snap-to-grid 280x280 ใน React Flow
+- Bias handle: ถ้า node อยู่ใกล้ขอบ จะเลือก side ติดขอบก่อน; cap handle ต่อด้าน และแชร์เมื่อเต็ม
+- Edge สามารถลากปลายเส้นได้ (updatable=true, edgeUpdaterRadius 20) แม้จะยังมี warning จาก React Flow API
+- สี node ปัจจุบันเป็นส้มเพื่อดีบักการทับ (เปลี่ยนกลับได้ตามต้องการ)
