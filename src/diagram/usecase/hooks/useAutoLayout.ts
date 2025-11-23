@@ -42,10 +42,11 @@ type ElkGraphInput = {
 
 type ElkLayoutResult = ElkLayoutNode & { children?: ElkLayoutNode[] }
 
+const BASE_NODE_SIZE = 144
 const DEFAULT_NODE_SIZE = {
-  [USE_CASE_NODE_TYPE.ACTOR]: { width: 120, height: 144 },
-  [USE_CASE_NODE_TYPE.USE_CASE]: { width: 180, height: 96 },
-  [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: { width: 340, height: 260 },
+  [USE_CASE_NODE_TYPE.ACTOR]: { width: BASE_NODE_SIZE, height: BASE_NODE_SIZE },
+  [USE_CASE_NODE_TYPE.USE_CASE]: { width: BASE_NODE_SIZE, height: BASE_NODE_SIZE },
+  [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: { width: BASE_NODE_SIZE, height: BASE_NODE_SIZE },
 } as const
 
 const LAYOUT_OPTIONS = {
@@ -73,8 +74,8 @@ const STACK_MARGIN_Y = 48
 const STACK_GAP_VERTICAL = 32
 const GRID_GAP_X = 32
 const GRID_GAP_Y = 32
-const BOUNDARY_MIN_WIDTH = 260
-const BOUNDARY_MIN_HEIGHT = 200
+const BOUNDARY_MIN_WIDTH = BASE_NODE_SIZE
+const BOUNDARY_MIN_HEIGHT = BASE_NODE_SIZE
 
 function labelBasedWidth(label: string, minWidth: number, maxWidth: number): number {
   const estimated = label.length * CHAR_WIDTH + PILL_PADDING
@@ -85,10 +86,12 @@ function labelBasedWidth(label: string, minWidth: number, maxWidth: number): num
 function flattenElkToReactFlow(
   elkNode: ElkLayoutNode,
   rawNodeMap: Map<string, RawGraphNode>,
+  visuals: Map<string, Partial<UseCaseNodeData>>,
   accumulator: Node<UseCaseNodeData>[],
 ) {
   const raw = rawNodeMap.get(elkNode.id)
   if (!raw) return
+  const visual = visuals.get(elkNode.id) ?? {}
 
   // ELK returns child coordinates relative to their parent, so we forward them directly.
   const x = elkNode.x ?? 0
@@ -100,7 +103,7 @@ function flattenElkToReactFlow(
     type: raw.type,
     parentId: raw.parentId,
     position: { x, y },
-    data: { label: raw.label, kind: raw.type },
+    data: { label: raw.label, kind: raw.type, ...visual },
     draggable: true,
     // Keep children inside their boundary when parentId is set.
     ...(raw.parentId ? { extent: 'parent' as const } : {}),
@@ -109,7 +112,7 @@ function flattenElkToReactFlow(
   })
 
   for (const child of elkNode.children ?? []) {
-    flattenElkToReactFlow(child, rawNodeMap, accumulator)
+    flattenElkToReactFlow(child, rawNodeMap, visuals, accumulator)
   }
 }
 
@@ -178,6 +181,25 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
     [graph.nodes],
   )
 
+  const nodeVisuals = useMemo(
+    () =>
+      new Map(
+        graph.nodes.map((node) => {
+          if (node.type === USE_CASE_NODE_TYPE.ACTOR) {
+            return [node.id, { icon: '🧍', accentColor: '#38bdf8' } satisfies Partial<UseCaseNodeData>]
+          }
+          if (node.type === USE_CASE_NODE_TYPE.USE_CASE) {
+            return [node.id, { accentColor: '#34d399' } satisfies Partial<UseCaseNodeData>]
+          }
+          if (node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY) {
+            return [node.id, { accentColor: '#0ea5e9' } satisfies Partial<UseCaseNodeData>]
+          }
+          return [node.id, {} satisfies Partial<UseCaseNodeData>]
+        }),
+      ),
+    [graph.nodes],
+  )
+
   useEffect(() => {
     let cancelled = false
     setIsLoading(true)
@@ -190,32 +212,13 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
       const cached = nodeSizeCache.get(node.id)
       if (cached) return cached
 
-      if (node.type === USE_CASE_NODE_TYPE.USE_CASE) {
-        const width = labelBasedWidth(node.label, 180, 340)
-        const size = { width, height: 96 }
-        nodeSizeCache.set(node.id, size)
-        return size
-      }
-
-      if (node.type === USE_CASE_NODE_TYPE.ACTOR) {
-        const width = labelBasedWidth(node.label, 140, 220)
-        const size = { width, height: 144 }
-        nodeSizeCache.set(node.id, size)
-        return size
-      }
-
-      if (node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY) {
-        const size = {
-          width: DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].width,
-          height: DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].height,
-        }
-        nodeSizeCache.set(node.id, size)
-        return size
-      }
-
-      const fallback = DEFAULT_NODE_SIZE[node.type] ?? { width: 200, height: 120 }
-      nodeSizeCache.set(node.id, fallback)
-      return fallback
+      // Square baseline: start from base size and grow equally (width=height) if label needs more room.
+      const minSize = BASE_NODE_SIZE
+      const maxSize = BASE_NODE_SIZE * 2
+      const needed = labelBasedWidth(node.label, minSize, maxSize)
+      const size = { width: needed, height: needed }
+      nodeSizeCache.set(node.id, size)
+      return size
     }
 
     const baseTrees: ElkLayoutNode[] = graph.nodes
@@ -248,7 +251,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
 
         const nodes: Node<UseCaseNodeData>[] = []
         layout.children?.forEach((child) =>
-          flattenElkToReactFlow(child, rawNodeMap, nodes),
+          flattenElkToReactFlow(child, rawNodeMap, nodeVisuals, nodes),
         )
         layoutChildrenGrid(nodes)
 
@@ -456,11 +459,28 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
         // Inject handle layout into node data for rendering.
         nodes.forEach((node) => {
           const counts = handleCounts.get(node.id)
-          if (counts) {
-            node.data = {
-              ...node.data,
-              handleLayout: counts,
-            }
+          if (!counts) return
+
+          // Ensure boundary nodes still show anchors even when no edges connect to them.
+          const totalHandles =
+            counts.top.source +
+            counts.top.target +
+            counts.right.source +
+            counts.right.target +
+            counts.bottom.source +
+            counts.bottom.target +
+            counts.left.source +
+            counts.left.target
+          if (totalHandles === 0 && node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY) {
+            counts.top = { source: 2, target: 2 }
+            counts.bottom = { source: 2, target: 2 }
+            counts.left = { source: 1, target: 1 }
+            counts.right = { source: 1, target: 1 }
+          }
+
+          node.data = {
+            ...node.data,
+            handleLayout: counts,
           }
         })
 
@@ -493,7 +513,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
     return () => {
       cancelled = true
     }
-  }, [graph.edges, graph.nodes, rawNodeMap])
+  }, [graph.edges, graph.nodes, rawNodeMap, nodeVisuals])
 
   return { result, isLoading, error }
 }

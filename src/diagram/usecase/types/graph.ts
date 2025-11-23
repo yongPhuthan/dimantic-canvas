@@ -40,6 +40,8 @@ export interface RawUseCaseGraph {
 export interface UseCaseNodeData extends Record<string, unknown> {
   label: string
   kind: UseCaseNodeKind
+  icon?: string
+  accentColor?: string
   handleLayout?: {
     top: { source: number; target: number }
     right: { source: number; target: number }
