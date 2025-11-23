@@ -10,7 +10,7 @@ import {
 } from '@xyflow/react'
 import { useMemo } from 'react'
 
-import type { UseCaseReactFlowEdge, UseCaseReactFlowNode } from '../../types/graph'
+import { USE_CASE_EDGE_TYPE, type UseCaseEdgeData, type UseCaseReactFlowEdge, type UseCaseReactFlowNode } from '../../types/graph'
 
 type FlowNodeWithPosition = UseCaseReactFlowNode & { parentId?: string }
 type AttachmentRole = 'source' | 'target'
@@ -279,58 +279,78 @@ export function EdgeModel({
       <defs>
         <marker
           id={`floating-arrow-${rfId}-${id}-${targetSideUsed}`}
-          markerWidth="14"
-          markerHeight="14"
+          markerWidth="18"
+          markerHeight="18"
           orient={markerOrientation}
           markerUnits="userSpaceOnUse"
-          refX="12"
-          refY="7"
+          refX="14"
+          refY="9"
         >
-          <path d="M 0 0 L 12 7 L 0 14 z" fill={strokeColor} />
+          <path d="M 0 0 L 14 9 L 0 18 z" fill={strokeColor} />
         </marker>
       </defs>
       <BaseEdge
         id={id}
         path={path}
-        style={edgeStyle}
+        style={{ ...edgeStyle, zIndex: 10 }}
         markerStart={appliedMarkerStart}
         markerEnd={appliedMarkerEnd}
-        interactionWidth={28}
+        interactionWidth={40}
         className={selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_rgba(56,189,248,0.7)]' : ''}
       />
       <EdgeLabelRenderer>
-        <button
-          onClick={() => {
-            const current = (data?.label as string | undefined) ?? ''
-            const next = window.prompt('Edit edge label', current)
-            if (next === null) return
-            const value = next.trim()
-            setEdges((eds) =>
-              eds.map((e) =>
-                e.id === id
-                  ? { ...e, data: { ...(e.data ?? {}), ...(value ? { label: value } : { label: '' }) } }
-                  : e,
-              ),
-            )
-          }}
-          style={{
-            position: 'absolute',
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 12}px)`,
-            pointerEvents: 'auto',
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#e2e8f0',
-            backgroundColor: 'rgba(15,23,42,0.9)',
-            padding: '2px 8px',
-            borderRadius: 999,
-            border: '1px solid rgba(148,163,184,0.5)',
-            boxShadow: '0 4px 10px rgba(0,0,0,0.35)',
-            whiteSpace: 'nowrap',
-            cursor: 'pointer',
-          }}
-        >
-          {(data?.label as string | undefined)?.trim() || 'Edit label'}
-        </button>
+        {(() => {
+          const dx = targetX - sourceX
+          const dy = targetY - sourceY
+          const horizontal = Math.abs(dx) >= Math.abs(dy)
+          const hash = Array.from(id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+          const tier = (hash % 5) - 2 // -2..2
+          const offset = horizontal
+            ? { x: tier * 12, y: dy >= 0 ? -20 : 20 }
+            : { x: dx >= 0 ? -20 : 20, y: tier * 12 }
+          return (
+            <button
+              onClick={() => {
+                const current = (data?.label as string | undefined) ?? ''
+                const next = window.prompt('Edit edge label', current)
+                if (next === null) return
+                const value = next.trim()
+                setEdges((eds) =>
+                  eds.map((e) =>
+                    e.id === id
+                      ? {
+                          ...e,
+                          data: {
+                            ...(e.data ?? {}),
+                            kind: (e.data as UseCaseEdgeData | undefined)?.kind ?? USE_CASE_EDGE_TYPE.ASSOCIATION,
+                            ...(value ? { label: value } : { label: '' }),
+                          },
+                        }
+                      : e,
+                  ),
+                )
+              }}
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX + offset.x}px, ${labelY + offset.y}px)`,
+                pointerEvents: 'auto',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#e2e8f0',
+                backgroundColor: 'rgba(15,23,42,0.92)',
+                padding: '2px 8px',
+                borderRadius: 999,
+                border: '1px solid rgba(148,163,184,0.6)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                zIndex: 40,
+              }}
+            >
+              {(data?.label as string | undefined)?.trim() || 'Edit label'}
+            </button>
+          )
+        })()}
       </EdgeLabelRenderer>
     </>
   )
