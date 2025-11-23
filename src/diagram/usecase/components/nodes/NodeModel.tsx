@@ -51,12 +51,14 @@ export function NodeModel({ data, selected }: NodeProps<UseCaseReactFlowNode>) {
     <div
       className={`group relative flex h-full w-full flex-col items-center ${
         hasIcon ? 'gap-3 justify-start' : 'gap-0 justify-center'
-      } rounded-2xl border px-4 py-4 text-center text-slate-900 shadow-sm backdrop-blur ${
-        selected
-          ? 'bg-white/95 ring-2 ring-offset-2 ring-offset-slate-900'
-          : 'bg-white/85 ring-1 ring-slate-200'
+      } rounded-2xl border px-4 py-4 text-center text-white shadow-sm backdrop-blur ${
+        selected ? 'ring-2 ring-offset-2 ring-offset-slate-900' : 'ring-1 ring-slate-200'
       }`}
-      style={{ borderColor: accent, boxShadow: selected ? undefined : '0 6px 18px rgba(15,23,42,0.08)' }}
+      style={{
+        borderColor: accent,
+        backgroundColor: '#f97316', // deep orange to highlight edge overlap
+        boxShadow: selected ? undefined : '0 6px 18px rgba(15,23,42,0.08)',
+      }}
     >
       {hasIcon ? (
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-700 shadow-inner">

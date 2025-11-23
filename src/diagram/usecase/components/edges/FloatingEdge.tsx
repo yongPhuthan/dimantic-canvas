@@ -1,6 +1,7 @@
 import type { EdgeProps, InternalNode, XYPosition } from '@xyflow/react'
 import {
   BaseEdge,
+  EdgeLabelRenderer,
   Position,
   getSmoothStepPath,
   useNodes,
@@ -50,7 +51,7 @@ export function EdgeModel({
   markerStart,
 }: EdgeProps<UseCaseReactFlowEdge>) {
   const nodes = useNodes() as FlowNodeWithPosition[]
-  const { getInternalNode } = useReactFlow<UseCaseReactFlowNode, UseCaseReactFlowEdge>()
+  const { getInternalNode, setEdges } = useReactFlow<UseCaseReactFlowNode, UseCaseReactFlowEdge>()
   const store = useStoreApi()
   const rfId = store.getState().rfId ?? 'rf'
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
@@ -297,6 +298,40 @@ export function EdgeModel({
         interactionWidth={28}
         className={selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_rgba(56,189,248,0.7)]' : ''}
       />
+      <EdgeLabelRenderer>
+        <button
+          onClick={() => {
+            const current = (data?.label as string | undefined) ?? ''
+            const next = window.prompt('Edit edge label', current)
+            if (next === null) return
+            const value = next.trim()
+            setEdges((eds) =>
+              eds.map((e) =>
+                e.id === id
+                  ? { ...e, data: { ...(e.data ?? {}), ...(value ? { label: value } : { label: '' }) } }
+                  : e,
+              ),
+            )
+          }}
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 12}px)`,
+            pointerEvents: 'auto',
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#e2e8f0',
+            backgroundColor: 'rgba(15,23,42,0.9)',
+            padding: '2px 8px',
+            borderRadius: 999,
+            border: '1px solid rgba(148,163,184,0.5)',
+            boxShadow: '0 4px 10px rgba(0,0,0,0.35)',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+          }}
+        >
+          {(data?.label as string | undefined)?.trim() || 'Edit label'}
+        </button>
+      </EdgeLabelRenderer>
     </>
   )
 }

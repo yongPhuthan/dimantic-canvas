@@ -10,6 +10,8 @@ import {
   useReactFlow,
   useNodesState,
   type NodeChange,
+  applyEdgeChanges,
+  useEdgesState,
 } from '@xyflow/react'
 import { useCallback, useEffect } from 'react'
 
@@ -35,6 +37,7 @@ function DiagramInner() {
   const { result, isLoading, error } = useAutoLayout(mockDenseConnectionsGraph)
   const { fitView } = useReactFlow()
   const [nodes, setNodes] = useNodesState(result.nodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(result.edges)
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<UseCaseNodeData>>[]) =>
       setNodes((current) => {
@@ -48,8 +51,9 @@ function DiagramInner() {
   useEffect(() => {
     if (!isLoading) {
       setNodes(result.nodes)
+      setEdges(result.edges)
     }
-  }, [isLoading, result.nodes, setNodes])
+  }, [isLoading, result.nodes, result.edges, setNodes, setEdges])
 
   useEffect(() => {
     if (!isLoading && result.nodes.length > 0) {
@@ -62,8 +66,9 @@ function DiagramInner() {
     <div className="h-full w-full">
       <ReactFlow
         nodes={nodes}
-        edges={result.edges}
+        edges={edges}
         onNodesChange={handleNodesChange}
+        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         proOptions={{ hideAttribution: true }}
