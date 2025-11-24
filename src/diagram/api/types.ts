@@ -4,6 +4,10 @@ import type { UseCaseEdgeKind, UseCaseNodeKind } from '../types/graph'
 
 export type DiagramNodeKind = UseCaseNodeKind
 export type DiagramEdgeKind = UseCaseEdgeKind
+export type SubgraphGridConfig = {
+  columns?: number
+  spacing?: number
+}
 
 export type LayoutDirection = 'RIGHT' | 'DOWN'
 export type LayoutAlgorithm = 'elk' | 'none'
@@ -28,6 +32,19 @@ export type DiagramNodeProps = {
   xs?: number
   sm?: number
   md?: number
+  children?: ReactNode
+}
+
+export type SubgraphNodeProps = {
+  id: string
+  label: string
+  parentId?: string
+  width?: number
+  height?: number
+  xs?: number
+  sm?: number
+  md?: number
+  grid?: SubgraphGridConfig
   children?: ReactNode
 }
 

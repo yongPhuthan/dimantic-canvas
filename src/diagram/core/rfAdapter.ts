@@ -1,4 +1,4 @@
-import { MarkerType, type Edge, type Node } from '@xyflow/react'
+import { MarkerType, type Edge } from '@xyflow/react'
 
 import { EdgeModel } from '../render/edgeTypes/FloatingEdge'
 import { ActorNode } from '../render/nodeTypes/ActorNode'
@@ -61,9 +61,9 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
   edges: UseCaseReactFlowEdge[]
 } {
   const nodes: UseCaseReactFlowNode[] = layout.nodes.map((node) => {
-    const base: Node<UseCaseNodeData> = {
+    const base: UseCaseReactFlowNode = {
       id: node.id,
-      type: node.type,
+      type: node.type as UseCaseReactFlowNode['type'],
       position: { x: node.x, y: node.y },
       parentId: node.parentId,
       width: node.width,
@@ -86,7 +86,7 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      type: 'floating',
+      type: 'floating' as UseCaseReactFlowEdge['type'],
       data: {
         kind: edge.type,
         ...(edge.label ? { label: edge.label } : edgeLabels[edge.type] ? { label: edgeLabels[edge.type] } : {}),

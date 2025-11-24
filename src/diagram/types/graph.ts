@@ -59,4 +59,4 @@ export interface UseCaseEdgeData extends Record<string, unknown> {
 }
 
 export type UseCaseReactFlowNode = Node<UseCaseNodeData, UseCaseNodeKind>
-export type UseCaseReactFlowEdge = Edge<UseCaseEdgeData, UseCaseEdgeKind>
+export type UseCaseReactFlowEdge = Edge<UseCaseEdgeData, UseCaseEdgeKind | 'floating'>
