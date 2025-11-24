@@ -9,6 +9,8 @@ import {
   type UseCaseEdgeData,
   type UseCaseNodeData,
 } from '../types/graph'
+import { computeGridSlots } from '../../../layout/gridEngine'
+import type { BreakpointId, GridSlot, LayoutTree } from '../../../layout/types'
 
 type UseCaseLayoutResult = {
   nodes: Node<UseCaseNodeData>[]
@@ -40,29 +42,32 @@ type ElkGraphInput = {
 
 type ElkLayoutResult = ElkLayoutNode & { children?: ElkLayoutNode[] }
 
-// Base square size for all nodes; will expand equally (width=height) based on label length.
-const BASE_NODE_SIZE = 144
+// Base square size per type; will expand equally (width=height) based on label length.
 const DEFAULT_NODE_SIZE = {
-  [USE_CASE_NODE_TYPE.ACTOR]: { width: BASE_NODE_SIZE, height: BASE_NODE_SIZE },
-  [USE_CASE_NODE_TYPE.USE_CASE]: { width: BASE_NODE_SIZE, height: BASE_NODE_SIZE },
-  [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: { width: BASE_NODE_SIZE, height: BASE_NODE_SIZE },
+  [USE_CASE_NODE_TYPE.ACTOR]: { width: 120, height: 120 },
+  [USE_CASE_NODE_TYPE.USE_CASE]: { width: 144, height: 144 },
+  [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: { width: 144, height: 144 },
 } as const
+// Legacy fallback for any runtime references.
+const BASE_NODE_SIZE = DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.USE_CASE].width
+void BASE_NODE_SIZE
 
 const LAYOUT_OPTIONS = {
   // Layered layout keeps actors on the left and flows toward use cases on the right.
   'org.eclipse.elk.algorithm': 'layered',
   'org.eclipse.elk.direction': 'RIGHT',
   // Increase spacing to reduce edge/node congestion for readability.
-  'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '180', // vertical gap between layers
-  'org.eclipse.elk.spacing.nodeNode': '160', // intra-layer node spacing
-  'org.eclipse.elk.spacing.edgeEdge': '110', // edge-edge spacing
+  'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '120', // vertical gap between layers
+  'org.eclipse.elk.spacing.nodeNode': '220', // intra-layer node spacing (horizontal spread)
+  'org.eclipse.elk.spacing.edgeEdge': '140', // edge-edge spacing
+  'org.eclipse.elk.spacing.componentComponent': '220',
   // Ensure compound (parent/child) nodes grow with children.
   'org.eclipse.elk.hierarchyHandling': 'INCLUDE_CHILDREN',
   // Add breathing room inside boundaries.
-  'org.eclipse.elk.padding': '[52,52,52,52]',
+  'org.eclipse.elk.padding': '[56,56,56,56]',
   // Encourage routed edges to bend/polyline to avoid collisions.
   'org.eclipse.elk.layered.edgeRouting': 'ORTHOGONAL',
-  'org.eclipse.elk.layered.edgeSpacingFactor': '1.8',
+  'org.eclipse.elk.layered.edgeSpacingFactor': '1.6',
   // Reserve space for labels.
   'org.eclipse.elk.spacing.labelNode': '32',
   'org.eclipse.elk.spacing.labelLabel': '32',
@@ -73,12 +78,13 @@ const elk = new ELK()
 
 const CHAR_WIDTH = 8
 const PILL_PADDING = 48
-const STACK_MARGIN_X = 48
-const STACK_MARGIN_Y = 48
 const GRID_GAP_X = 32
-const GRID_GAP_Y = 32
-const BOUNDARY_MIN_WIDTH = BASE_NODE_SIZE
-const BOUNDARY_MIN_HEIGHT = BASE_NODE_SIZE
+const GRID_GAP_Y = 24
+const BOUNDARY_MIN_WIDTH = DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].width
+const BOUNDARY_MIN_HEIGHT = DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY].height
+const LANE_PADDING = { top: 48, right: 64, bottom: 48, left: 64 }
+const LANE_GAP_X = 56
+const LANE_GAP_Y = 32
 
 function labelBasedWidth(label: string, minWidth: number, maxWidth: number): number {
   const estimated = label.length * CHAR_WIDTH + PILL_PADDING
@@ -119,42 +125,158 @@ function flattenElkToReactFlow(
   }
 }
 
-function layoutChildrenGrid(nodes: Node<UseCaseNodeData>[]) {
-  const useCaseDefaults = DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.USE_CASE]
+type BoundaryLayout = {
+  positions: Map<string, { x: number; y: number }>
+  width: number
+  height: number
+}
 
-  nodes
-    .filter((node) => node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY)
-    .forEach((boundary) => {
-      const children = nodes.filter(
-        (node) => node.parentId === boundary.id && node.type === USE_CASE_NODE_TYPE.USE_CASE,
-      )
-      if (children.length === 0) return
+function computeBoundaryLayout(
+  boundaryId: string,
+  allNodes: RawGraphNode[],
+  edges: RawUseCaseGraph['edges'],
+  sizeCache: Map<string, { width: number; height: number }>,
+): BoundaryLayout | null {
+  const children = allNodes.filter((node) => node.parentId === boundaryId)
+  if (children.length === 0) return null
 
-      const columns = Math.max(1, Math.min(children.length, Math.ceil(Math.sqrt(children.length))))
-      const maxChildWidth = Math.max(...children.map((child) => child.width ?? useCaseDefaults.width))
-      const maxChildHeight = Math.max(...children.map((child) => child.height ?? useCaseDefaults.height))
-      const cellWidth = maxChildWidth + GRID_GAP_X
-      const cellHeight = maxChildHeight + GRID_GAP_Y
+  const childIds = new Set(children.map((c) => c.id))
+  const maxChildWidth = Math.max(
+    ...children.map((c) => sizeCache.get(c.id)?.width ?? DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.USE_CASE].width),
+  )
+  const maxChildHeight = Math.max(
+    ...children.map((c) => sizeCache.get(c.id)?.height ?? DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.USE_CASE].height),
+  )
+  const cellWidth = maxChildWidth + GRID_GAP_X
+  const cellHeight = maxChildHeight + GRID_GAP_Y
 
-      children.forEach((child, index) => {
-        const column = index % columns
-        const row = Math.floor(index / columns)
-        child.position.x = STACK_MARGIN_X + column * cellWidth
-        child.position.y = STACK_MARGIN_Y + row * cellHeight
-      })
+  const isEntry = (id: string) =>
+    edges.some((e) => e.target === id && !childIds.has(e.source) && e.source !== boundaryId)
+  const isExit = (id: string) =>
+    edges.some((e) => e.source === id && !childIds.has(e.target) && e.target !== boundaryId)
 
-      const gridWidth = columns * cellWidth - GRID_GAP_X
-      const rows = Math.ceil(children.length / columns)
-      const gridHeight = rows * cellHeight - GRID_GAP_Y
+  const entries: RawGraphNode[] = []
+  const exits: RawGraphNode[] = []
+  const internals: RawGraphNode[] = []
 
-      boundary.width = Math.max(BOUNDARY_MIN_WIDTH, gridWidth + STACK_MARGIN_X * 2)
-      boundary.height = Math.max(BOUNDARY_MIN_HEIGHT, gridHeight + STACK_MARGIN_Y * 2)
+  children.forEach((child) => {
+    if (isEntry(child.id)) {
+      entries.push(child)
+      return
+    }
+    if (isExit(child.id)) {
+      exits.push(child)
+      return
+    }
+    internals.push(child)
+  })
+
+  const positions = new Map<string, { x: number; y: number }>()
+
+  const entryCols = entries.length ? Math.max(2, Math.ceil(entries.length / 2)) : 0
+  const entryRows = entryCols ? Math.ceil(entries.length / entryCols) : 0
+  const entryWidth = entryCols ? Math.max(0, entryCols * cellWidth - GRID_GAP_X) : 0
+  const entryHeight = entryRows ? Math.max(0, entryRows * cellHeight - GRID_GAP_Y) : 0
+
+  const internalCols = internals.length ? Math.max(2, Math.ceil(internals.length / 2)) : 0
+  const internalRows = internalCols ? Math.ceil(internals.length / internalCols) : 0
+  const internalWidth = internalCols ? Math.max(0, internalCols * cellWidth - GRID_GAP_X) : 0
+  const internalHeight = internalRows ? Math.max(0, internalRows * cellHeight - GRID_GAP_Y) : 0
+
+  const exitCols = exits.length ? Math.max(2, Math.ceil(exits.length / 2)) : 0
+  const exitRows = exitCols ? Math.ceil(exits.length / exitCols) : 0
+  const exitWidth = exitCols ? Math.max(0, exitCols * cellWidth - GRID_GAP_X) : 0
+  const exitHeight = exitRows ? Math.max(0, exitRows * cellHeight - GRID_GAP_Y) : 0
+
+  let xCursor = LANE_PADDING.left
+
+  // Entry lane (left)
+  entries.forEach((node, idx) => {
+    const col = entryCols ? idx % entryCols : 0
+    const row = entryCols ? Math.floor(idx / entryCols) : 0
+    positions.set(node.id, {
+      x: xCursor + col * cellWidth,
+      y: LANE_PADDING.top + row * cellHeight,
     })
+  })
+
+  if (entries.length && (internals.length || exits.length)) {
+    xCursor += entryWidth + LANE_GAP_X
+  } else {
+    xCursor += entryWidth
+  }
+
+  // Internal lane(s)
+  const internalBaseX = xCursor
+  internals.forEach((node, idx) => {
+    const col = internalCols ? idx % internalCols : 0
+    const row = internalCols ? Math.floor(idx / internalCols) : 0
+    positions.set(node.id, {
+      x: internalBaseX + col * cellWidth,
+      y: LANE_PADDING.top + row * cellHeight,
+    })
+  })
+
+  if (internalWidth && exits.length) {
+    xCursor = internalBaseX + internalWidth + LANE_GAP_X
+  } else if (internalWidth) {
+    xCursor = internalBaseX + internalWidth
+  }
+
+  // Exit lane (right)
+  exits.forEach((node, idx) => {
+    const col = exitCols ? idx % exitCols : 0
+    const row = exitCols ? Math.floor(idx / exitCols) : 0
+    positions.set(node.id, {
+      x: xCursor + col * cellWidth,
+      y: LANE_PADDING.top + row * cellHeight,
+    })
+  })
+
+  const contentWidth =
+    entryWidth +
+    (entries.length && (internals.length || exits.length) ? LANE_GAP_X : 0) +
+    internalWidth +
+    (internalWidth && exits.length ? LANE_GAP_X : 0) +
+    exitWidth
+
+  const contentHeight = Math.max(entryHeight, internalHeight, exitHeight)
+
+  const width = Math.max(BOUNDARY_MIN_WIDTH, contentWidth + LANE_PADDING.left + LANE_PADDING.right)
+  const height = Math.max(BOUNDARY_MIN_HEIGHT, contentHeight + LANE_PADDING.top + LANE_PADDING.bottom + LANE_GAP_Y)
+
+  return { positions, width, height }
+}
+
+function applyBoundaryLayouts(
+  nodes: Node<UseCaseNodeData>[],
+  layouts: Map<string, BoundaryLayout>,
+): void {
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]))
+
+  layouts.forEach((layout, boundaryId) => {
+    const boundaryNode = nodeMap.get(boundaryId)
+    if (boundaryNode) {
+      boundaryNode.width = layout.width
+      boundaryNode.height = layout.height
+    }
+
+    layout.positions.forEach((pos, childId) => {
+      const child = nodeMap.get(childId)
+      if (child) {
+        child.position.x = pos.x
+        child.position.y = pos.y
+      }
+    })
+  })
 }
 
 
 
-export function useAutoLayout(graph: RawUseCaseGraph): {
+export function useAutoLayout(
+  graph: RawUseCaseGraph,
+  options?: { layoutTree?: LayoutTree; breakpoint?: BreakpointId },
+): {
   result: UseCaseLayoutResult
   isLoading: boolean
   error: Error | null
@@ -184,6 +306,11 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
     })
     return hints
   }, [graph.nodes])
+
+  const gridSlots = useMemo(() => {
+    if (!options?.layoutTree) return new Map<string, GridSlot>()
+    return computeGridSlots(options.layoutTree, options.breakpoint ?? 'lg')
+  }, [options?.layoutTree, options?.breakpoint])
 
   const anchorHints = useMemo(() => {
     const hints = new Map<string, Position>()
@@ -227,27 +354,45 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
       if (cached) return cached
 
       // Square baseline: start from base size and grow equally (width=height) if label needs more room.
-      const minSize = BASE_NODE_SIZE
-      const maxSize = BASE_NODE_SIZE * 2
+      const base = DEFAULT_NODE_SIZE[node.type] ?? DEFAULT_NODE_SIZE[USE_CASE_NODE_TYPE.USE_CASE]
+      const minSize = base.width
+      const maxSize = base.width * 1.6
       const needed = labelBasedWidth(node.label, minSize, maxSize)
       const size = { width: needed, height: needed }
       nodeSizeCache.set(node.id, size)
       return size
     }
 
-    const baseTrees: ElkLayoutNode[] = graph.nodes
-      .map((node) => {
-        const size = computeSize(node)
-        const posHint = positionHints.get(node.id)
-        return {
-          id: node.id,
-          width: size.width,
-          height: size.height,
-          ...(posHint ? { x: posHint.x, y: posHint.y } : {}),
-          labels: [{ text: node.label }],
-          children: [],
-        }
+    // Warm the size cache so compound sizing can reuse it.
+    graph.nodes.forEach((node) => computeSize(node))
+
+    // Compute internal layouts and locked sizes for each boundary before ELK.
+    const boundaryLayouts = new Map<string, BoundaryLayout>()
+    graph.nodes
+      .filter((node) => node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY)
+      .forEach((boundary) => {
+        const layout = computeBoundaryLayout(boundary.id, graph.nodes, graph.edges, nodeSizeCache)
+        if (layout) boundaryLayouts.set(boundary.id, layout)
       })
+
+    const baseTrees: ElkLayoutNode[] = graph.nodes.map((node) => {
+      const boundaryLayout = boundaryLayouts.get(node.id)
+      const slot = node.parentId ? undefined : gridSlots.get(node.id)
+      const size = boundaryLayout
+        ? { width: boundaryLayout.width, height: boundaryLayout.height }
+        : slot
+          ? { width: slot.width, height: slot.height }
+          : computeSize(node)
+      const posHint = slot ? { x: slot.x, y: slot.y } : positionHints.get(node.id)
+      return {
+        id: node.id,
+        width: size.width,
+        height: size.height,
+        ...(posHint ? { x: posHint.x, y: posHint.y } : {}),
+        labels: [{ text: node.label }],
+        children: [],
+      }
+    })
 
     const elkGraph: ElkGraphInput = {
       id: 'root',
@@ -269,7 +414,40 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
         layout.children?.forEach((child) =>
           flattenElkToReactFlow(child, rawNodeMap, nodeVisuals, nodes),
         )
-        layoutChildrenGrid(nodes)
+        applyBoundaryLayouts(nodes, boundaryLayouts)
+
+        // Force top-level nodes (actors, boundaries, root use cases) to grid slot positions; size only for non-actors/non-boundaries.
+        if (gridSlots.size > 0) {
+          nodes.forEach((node) => {
+            if (node.parentId) return
+            const slot = gridSlots.get(node.id)
+            if (!slot) return
+            node.position.x = slot.x
+            node.position.y = slot.y
+            if (node.type !== USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY && node.type !== USE_CASE_NODE_TYPE.ACTOR) {
+              node.width = slot.width
+              node.height = slot.height
+            }
+          })
+        }
+
+        // Align actors to the leftmost column to emphasize start when grid slots are not driving layout.
+        if (gridSlots.size === 0) {
+          const actorNodes = nodes.filter((n) => n.type === USE_CASE_NODE_TYPE.ACTOR)
+          if (actorNodes.length) {
+            const nonActorXs = nodes
+              .filter((n) => n.type !== USE_CASE_NODE_TYPE.ACTOR)
+              .map((n) => n.position.x)
+            const minActorX = Math.min(...actorNodes.map((n) => n.position.x))
+            const targetX =
+              nonActorXs.length > 0
+                ? Math.min(minActorX, Math.min(...nonActorXs) - 200)
+                : minActorX
+            actorNodes.forEach((actor) => {
+              actor.position.x = targetX
+            })
+          }
+        }
 
         // Build quick lookup for centers (absolute) including parent offsets.
         const nodeMap = new Map(nodes.map((n) => [n.id, n]))
@@ -362,15 +540,17 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
         })
 
         // Allocate handles with cap per side, spill to other sides, then share when all sides used.
-        const MAX_PER_SIDE = 3
+        const DEFAULT_MAX_PER_SIDE = 3
+        const actorMaxPerSide = 6
         const SIDE_ORDER: Position[] = [Position.Right, Position.Left, Position.Top, Position.Bottom]
         const sideLabel = (side: Position) =>
           side === Position.Top ? 'top' : side === Position.Right ? 'right' : side === Position.Bottom ? 'bottom' : 'left'
 
         type SideUsage = Record<Position, number>
         const allocateHandles = (
-          _nodeId: string, _role: string, reqs: Request[],
+          nodeId: string, _role: string, reqs: Request[],
         ): { assignments: Map<string, { side: Position; slot: number }>; counts: Record<Position, number> } => {
+          const maxPerSide = rawNodeMap.get(nodeId)?.type === USE_CASE_NODE_TYPE.ACTOR ? actorMaxPerSide : DEFAULT_MAX_PER_SIDE
           const assignments = new Map<string, { side: Position; slot: number }>()
           const load: SideUsage = {
             [Position.Top]: 0,
@@ -384,7 +564,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
 
           // Pass 1: use preferred side if available.
           sorted.forEach((req) => {
-            if (load[req.preferred] < MAX_PER_SIDE) {
+            if (load[req.preferred] < maxPerSide) {
               assignments.set(req.edgeId, { side: req.preferred, slot: load[req.preferred] })
               load[req.preferred] += 1
             } else {
@@ -395,7 +575,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
           const spill: Request[] = []
           // Pass 2: spill to any side with capacity (< MAX_PER_SIDE), choose the side with smallest load (tie by SIDE_ORDER).
           overflow.forEach((req) => {
-            const candidates = SIDE_ORDER.filter((side) => load[side] < MAX_PER_SIDE)
+            const candidates = SIDE_ORDER.filter((side) => load[side] < maxPerSide)
             if (candidates.length === 0) {
               spill.push(req)
               return
@@ -412,16 +592,16 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
             const candidates = SIDE_ORDER.filter((s) => load[s] === minLoad)
             candidates.sort((a, b) => SIDE_ORDER.indexOf(a) - SIDE_ORDER.indexOf(b))
             const chosen = candidates[0]
-            const slot = load[chosen] % MAX_PER_SIDE
+            const slot = load[chosen] % maxPerSide
             assignments.set(req.edgeId, { side: chosen, slot })
             load[chosen] += 1
           })
 
           const cappedCounts: Record<Position, number> = {
-            [Position.Top]: Math.min(MAX_PER_SIDE, load[Position.Top]),
-            [Position.Right]: Math.min(MAX_PER_SIDE, load[Position.Right]),
-            [Position.Bottom]: Math.min(MAX_PER_SIDE, load[Position.Bottom]),
-            [Position.Left]: Math.min(MAX_PER_SIDE, load[Position.Left]),
+            [Position.Top]: Math.min(maxPerSide, load[Position.Top]),
+            [Position.Right]: Math.min(maxPerSide, load[Position.Right]),
+            [Position.Bottom]: Math.min(maxPerSide, load[Position.Bottom]),
+            [Position.Left]: Math.min(maxPerSide, load[Position.Left]),
           }
 
           return { assignments, counts: cappedCounts }
@@ -548,7 +728,7 @@ export function useAutoLayout(graph: RawUseCaseGraph): {
     return () => {
       cancelled = true
     }
-  }, [graph.edges, graph.nodes, rawNodeMap, nodeVisuals])
+  }, [graph.edges, graph.nodes, rawNodeMap, nodeVisuals, gridSlots])
 
   return { result, isLoading, error }
 }

@@ -16,8 +16,12 @@ import { useCallback, useEffect } from 'react'
 
 import '@xyflow/react/dist/style.css'
 
+import { useMemo } from 'react'
+
 import { useAutoLayout } from '../hooks/useAutoLayout'
 import { mockDenseConnectionsGraph } from '../mock/useCaseGraphDense'
+import { useCaseLayoutBalanced, useCaseLayoutStacked, useCaseLayoutWide } from '../layout/UseCaseLayout'
+import { parseLayoutTree } from '../../../layout/Layout'
 import { type UseCaseNodeData } from '../types/graph'
 import { EdgeModel } from './edges/FloatingEdge'
 import { ActorNode } from './nodes/ActorNode'
@@ -33,7 +37,15 @@ const nodeTypes = {
 const edgeTypes = { floating: EdgeModel }
 
 function DiagramInner() {
-  const { result, isLoading, error } = useAutoLayout(mockDenseConnectionsGraph)
+  const layoutVariant: 'balanced' | 'wide' | 'stacked' = 'balanced'
+  const layoutTree = useMemo(() => {
+    const variants = { balanced: useCaseLayoutBalanced, wide: useCaseLayoutWide, stacked: useCaseLayoutStacked } as const
+    return parseLayoutTree(variants[layoutVariant])
+  }, [layoutVariant])
+  const { result, isLoading, error } = useAutoLayout(mockDenseConnectionsGraph, {
+    layoutTree,
+    breakpoint: 'lg',
+  })
   const { fitView } = useReactFlow()
   const [nodes, setNodes] = useNodesState(result.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(result.edges)
