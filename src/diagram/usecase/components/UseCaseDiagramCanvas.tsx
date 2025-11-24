@@ -8,15 +8,15 @@ export function UseCaseDiagramCanvas() {
 
   return (
     <DiagramCanvas>
-      <DiagramLayout algorithm="elk" direction="RIGHT" grid spacing={2} padding={56}>
-        <DiagramNode id="actor:customer" kind="ACTOR" label="Customer" xs={3} />
-        <DiagramNode id="actor:admin" kind="ACTOR" label="Admin" xs={3} />
+      <DiagramLayout algorithm="elk" direction="RIGHT" grid spacing={2} padding={506}>
+        <DiagramNode id="actor:customer" kind="ACTOR" label="Customer" xs={3} width={10} height={140} />
+        <DiagramNode id="actor:admin" kind="ACTOR" label="Admin" xs={3} width={180} height={140} />
 
-        <DiagramNode id={boundaryId} kind="SYSTEM_BOUNDARY" label="Ticketing System" xs={9}>
-          <DiagramNode id="usecase:search" kind="USE_CASE" label="Search Flights" xs={6} />
-          <DiagramNode id="usecase:book" kind="USE_CASE" label="Book Ticket" xs={6} />
-          <DiagramNode id="usecase:pay" kind="USE_CASE" label="Pay with Card" xs={6} />
-          <DiagramNode id="usecase:notify" kind="USE_CASE" label="Notify Passenger" xs={6} />
+        <DiagramNode id={boundaryId} kind="SYSTEM_BOUNDARY" label="Ticketing System" xs={9} width={760} height={460}>
+          <DiagramNode id="usecase:search" kind="USE_CASE" label="Search Flights" xs={6} width={200} height={150} />
+          <DiagramNode id="usecase:book" kind="USE_CASE" label="Book Ticket" xs={6} width={100} height={150} />
+          <DiagramNode id="usecase:pay" kind="USE_CASE" label="Pay with Card" xs={6} width={220} height={150} />
+          <DiagramNode id="usecase:notify" kind="USE_CASE" label="Notify Passenger" xs={6} width={220} height={150} />
         </DiagramNode>
 
         {mockUseCaseGraph.edges.map((edge) => (

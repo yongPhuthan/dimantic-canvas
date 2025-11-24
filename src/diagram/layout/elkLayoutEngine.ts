@@ -27,6 +27,8 @@ type ElkGraphInput = {
   edges: ElkEdgeInput[]
 }
 
+type ElkLayoutComputed = ElkLayoutNode & { children?: ElkLayoutNode[] }
+
 export type LayoutResultNode = RawGraphNode & { x: number; y: number; width: number; height: number }
 export type LayoutResult = { nodes: LayoutResultNode[]; edges: RawGraphEdge[] }
 
@@ -72,10 +74,12 @@ function buildElkGraph(graph: GraphModel, config: LayoutConfig): ElkGraphInput {
     const span = config.grid ? graph.hints.get(node.id) : undefined
     const spanFactor = span?.md ?? span?.sm ?? span?.xs ?? 0
     const widthBoost = spanFactor > 0 ? (spanFactor / 3) * 80 : 0
+    const preferredWidth = node.width
+    const preferredHeight = node.height
     const elkNode: ElkLayoutNode = {
       id: node.id,
-      width: labelBasedWidth(node.label, base.width + widthBoost),
-      height: base.height,
+      width: preferredWidth ?? labelBasedWidth(node.label, base.width + widthBoost),
+      height: preferredHeight ?? base.height,
       children: [],
       labels: [{ text: node.label }],
     }
@@ -118,8 +122,8 @@ export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Pro
         ...node,
         x: 0,
         y: 0,
-        width: BASE_SIZE[node.type].width,
-        height: BASE_SIZE[node.type].height,
+        width: node.width ?? BASE_SIZE[node.type].width,
+        height: node.height ?? BASE_SIZE[node.type].height,
       })),
       edges: graph.edges,
     }
@@ -127,11 +131,12 @@ export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Pro
 
   const elkGraph = buildElkGraph(graph, config)
 
-  const elkResult = await elk.layout(elkGraph)
+  const elkResult = (await elk.layout(elkGraph)) as ElkLayoutComputed
 
   const flattened: LayoutResultNode[] = []
   const nodeTypeMap = new Map(graph.nodes.map((n) => [n.id, n.type]))
   const parentMap = new Map(graph.nodes.map((n) => [n.id, n.parentId]))
+  const sizeMap = new Map(graph.nodes.map((n) => [n.id, { width: n.width, height: n.height }]))
 
   const walk = (node: ElkLayoutNode, parentId?: string) => {
     const type = nodeTypeMap.get(node.id) ?? USE_CASE_NODE_TYPE.USE_CASE
@@ -142,13 +147,13 @@ export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Pro
       parentId,
       x: node.x ?? 0,
       y: node.y ?? 0,
-      width: node.width ?? BASE_SIZE[type].width,
-      height: node.height ?? BASE_SIZE[type].height,
+      width: node.width ?? sizeMap.get(node.id)?.width ?? BASE_SIZE[type].width,
+      height: node.height ?? sizeMap.get(node.id)?.height ?? BASE_SIZE[type].height,
     })
-    node.children?.forEach((child) => walk(child, node.id))
+    node.children?.forEach((child: ElkLayoutNode) => walk(child, node.id))
   }
 
-  elkResult.children?.forEach((child) => walk(child))
+  elkResult.children?.forEach((child: ElkLayoutNode) => walk(child))
 
   // ELK may drop empty parents; ensure parentId propagated from source graph if missing.
   flattened.forEach((node) => {

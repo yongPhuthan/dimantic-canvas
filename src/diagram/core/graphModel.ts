@@ -36,6 +36,8 @@ export function buildGraphModel(children: ReactNode): GraphModel {
         id: props.id,
         label: props.label,
         type: props.kind,
+        ...(props.width ? { width: props.width } : {}),
+        ...(props.height ? { height: props.height } : {}),
         ...(nextParentId ? { parentId: nextParentId } : {}),
       })
       hints.set(props.id, { xs: props.xs, sm: props.sm, md: props.md })
@@ -58,12 +60,14 @@ export function buildGraphModel(children: ReactNode): GraphModel {
     }
 
     if (child.type === Fragment) {
-      Children.forEach(child.props.children, (nested) => walk(nested, parentId))
+      const fragmentChildren = (child.props as { children?: ReactNode }).children
+      Children.forEach(fragmentChildren, (nested) => walk(nested, parentId))
       return
     }
 
-    if (child.props?.children) {
-      Children.forEach(child.props.children, (nested: ReactNode) => walk(nested, parentId))
+    const genericProps = child.props as { children?: ReactNode } | undefined
+    if (genericProps?.children) {
+      Children.forEach(genericProps.children, (nested: ReactNode) => walk(nested, parentId))
     }
   }
 

@@ -23,6 +23,8 @@ export type DiagramNodeProps = {
   kind: DiagramNodeKind
   label: string
   parentId?: string
+  width?: number
+  height?: number
   xs?: number
   sm?: number
   md?: number

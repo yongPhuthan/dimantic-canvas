@@ -248,8 +248,8 @@ export function EdgeModel({
     return null
   }
 
-  const sourcePoint = sourcePick?.point ?? anchorPoint(sourceNode, sourceSideUsed, sourceOffset)
-  const targetPoint = targetPick?.point ?? anchorPoint(targetNode, targetSideUsed, targetOffset)
+  const sourcePoint = sourcePick?.point ?? anchorPoint(sourceNode!, sourceSideUsed, sourceOffset)
+  const targetPoint = targetPick?.point ?? anchorPoint(targetNode!, targetSideUsed, targetOffset)
 
   const sourceX = sourcePoint.x
   const sourceY = sourcePoint.y

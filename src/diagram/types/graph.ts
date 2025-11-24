@@ -23,6 +23,8 @@ export interface RawGraphNode {
   label: string
   type: UseCaseNodeKind
   parentId?: string
+  width?: number
+  height?: number
 }
 
 export interface RawGraphEdge {
