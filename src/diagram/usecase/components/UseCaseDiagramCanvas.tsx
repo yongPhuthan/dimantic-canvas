@@ -1,125 +1,28 @@
-import {
-  Background,
-  Controls,
-  MiniMap,
-  Panel,
-  ReactFlow,
-  ReactFlowProvider,
-  applyNodeChanges,
-  useEdgesState,
-  useNodesState,
-  useReactFlow,
-  type Node,
-  type NodeChange
-} from '@xyflow/react'
-import { useCallback, useEffect } from 'react'
-
 import '@xyflow/react/dist/style.css'
 
-import { useMemo } from 'react'
-
-import { useAutoLayout } from '../hooks/useAutoLayout'
-import { mockDenseConnectionsGraph } from '../mock/useCaseGraphDense'
-import { useCaseLayoutBalanced, useCaseLayoutStacked, useCaseLayoutWide } from '../layout/UseCaseLayout'
-import { parseLayoutTree } from '../../../layout/Layout'
-import { type UseCaseNodeData } from '../types/graph'
-import { EdgeModel } from './edges/FloatingEdge'
-import { ActorNode } from './nodes/ActorNode'
-import { SystemNode } from './nodes/SystemNode'
-import { UseCaseNode } from './nodes/UseCaseNode'
-
-const nodeTypes = {
-  ACTOR: ActorNode,
-  USE_CASE: UseCaseNode,
-  SYSTEM_BOUNDARY: SystemNode,
-}
-
-const edgeTypes = { floating: EdgeModel }
-
-function DiagramInner() {
-  const layoutVariant: 'balanced' | 'wide' | 'stacked' = 'balanced'
-  const layoutTree = useMemo(() => {
-    const variants = { balanced: useCaseLayoutBalanced, wide: useCaseLayoutWide, stacked: useCaseLayoutStacked } as const
-    return parseLayoutTree(variants[layoutVariant])
-  }, [layoutVariant])
-  const { result, isLoading, error } = useAutoLayout(mockDenseConnectionsGraph, {
-    layoutTree,
-    breakpoint: 'lg',
-  })
-  const { fitView } = useReactFlow()
-  const [nodes, setNodes] = useNodesState(result.nodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(result.edges)
-  const handleNodesChange = useCallback(
-    (changes: NodeChange<Node<UseCaseNodeData>>[]) =>
-      setNodes((current) => {
-        const changed = applyNodeChanges(changes, current)
-        return changed
-      }),
-    [setNodes],
-  )
-
-  // Sync layout output into the interactive nodes state whenever ELK finishes.
-  useEffect(() => {
-    if (!isLoading) {
-      setNodes(result.nodes)
-      setEdges(result.edges)
-    }
-  }, [isLoading, result.nodes, result.edges, setNodes, setEdges])
-
-  useEffect(() => {
-    if (!isLoading && result.nodes.length > 0) {
-      // Fit view after layout finishes so the whole diagram is visible.
-      requestAnimationFrame(() => fitView({ padding: 0.25 }))
-    }
-  }, [fitView, isLoading, result.nodes.length])
-
-  return (
-    <div className="h-full w-full">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        proOptions={{ hideAttribution: true }}
-        fitView={false}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.9 }}
-        panOnScroll
-        zoomOnScroll
-        elevateEdgesOnSelect
-      >
-        <Background gap={24} color="#1e293b" />
-        <MiniMap pannable zoomable nodeStrokeColor="#94a3b8" maskColor="rgba(15,23,42,0.85)" />
-        <Controls />
-
-        <Panel position="top-left" className="rounded-lg bg-slate-900/90 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
-          <div className="font-semibold">Use Case Diagram</div>
-          <div className="text-[11px] opacity-80">
-            Rendering mock data via ELK layout (no backend yet)
-          </div>
-        </Panel>
-
-        {isLoading ? (
-          <Panel position="bottom-left" className="rounded-lg bg-slate-900/80 px-3 py-1 text-xs text-slate-100 shadow">
-            Laying out graph with ELK...
-          </Panel>
-        ) : null}
-        {error ? (
-          <Panel position="bottom-left" className="mt-2 rounded-lg bg-rose-900/80 px-3 py-1 text-xs text-rose-100 shadow">
-            Layout error: {error.message}
-          </Panel>
-        ) : null}
-      </ReactFlow>
-    </div>
-  )
-}
+import { DiagramCanvas, DiagramEdge, DiagramLayout, DiagramNode } from '../..'
+import { mockUseCaseGraph } from '../../mock/useCaseGraph'
 
 export function UseCaseDiagramCanvas() {
-  // Provider lives here so callers can just drop <UseCaseDiagramCanvas /> in any page.
+  const boundaryId = 'boundary:ticketing'
+
   return (
-    <ReactFlowProvider>
-      <DiagramInner />
-    </ReactFlowProvider>
+    <DiagramCanvas>
+      <DiagramLayout algorithm="elk" direction="RIGHT" grid spacing={2} padding={56}>
+        <DiagramNode id="actor:customer" kind="ACTOR" label="Customer" xs={3} />
+        <DiagramNode id="actor:admin" kind="ACTOR" label="Admin" xs={3} />
+
+        <DiagramNode id={boundaryId} kind="SYSTEM_BOUNDARY" label="Ticketing System" xs={9}>
+          <DiagramNode id="usecase:search" kind="USE_CASE" label="Search Flights" xs={6} />
+          <DiagramNode id="usecase:book" kind="USE_CASE" label="Book Ticket" xs={6} />
+          <DiagramNode id="usecase:pay" kind="USE_CASE" label="Pay with Card" xs={6} />
+          <DiagramNode id="usecase:notify" kind="USE_CASE" label="Notify Passenger" xs={6} />
+        </DiagramNode>
+
+        {mockUseCaseGraph.edges.map((edge) => (
+          <DiagramEdge key={edge.id} id={edge.id} from={edge.source} to={edge.target} kind={edge.type} label={edge.label} />
+        ))}
+      </DiagramLayout>
+    </DiagramCanvas>
   )
 }

@@ -8,7 +8,7 @@ import {
   useReactFlow,
   useStoreApi,
 } from '@xyflow/react'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import { USE_CASE_EDGE_TYPE, type UseCaseEdgeData, type UseCaseReactFlowEdge, type UseCaseReactFlowNode } from '../../types/graph'
 
@@ -56,39 +56,42 @@ export function EdgeModel({
   const rfId = store.getState().rfId ?? 'rf'
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
 
-  const getAbsolutePosition = (node: FlowNodeWithPosition): XYPosition => {
-    let x = node.position.x
-    let y = node.position.y
-    let parentId = node.parentId
-    while (parentId) {
-      const parent = nodeMap.get(parentId)
-      if (!parent) break
-      x += parent.position.x
-      y += parent.position.y
-      parentId = parent.parentId
-    }
-    return { x, y }
-  }
+  const getAbsolutePosition = useCallback(
+    (node: FlowNodeWithPosition): XYPosition => {
+      let x = node.position.x
+      let y = node.position.y
+      let parentId = node.parentId
+      while (parentId) {
+        const parent = nodeMap.get(parentId)
+        if (!parent) break
+        x += parent.position.x
+        y += parent.position.y
+        parentId = parent.parentId
+      }
+      return { x, y }
+    },
+    [nodeMap],
+  )
 
   const sourceNode = nodes.find((node) => node.id === source)
   const targetNode = nodes.find((node) => node.id === target)
-
-  if (!sourceNode || !targetNode) {
-    return null
-  }
+  const hasEndpoints = Boolean(sourceNode && targetNode)
 
   const edges = store.getState().edges as UseCaseReactFlowEdge[]
 
-  const getCenter = (node: FlowNodeWithPosition) => {
-    const abs = getAbsolutePosition(node)
-    return {
-      x: abs.x + (node.width ?? 0) / 2,
-      y: abs.y + (node.height ?? 0) / 2,
-    }
-  }
+  const getCenter = useCallback(
+    (node: FlowNodeWithPosition) => {
+      const abs = getAbsolutePosition(node)
+      return {
+        x: abs.x + (node.width ?? 0) / 2,
+        y: abs.y + (node.height ?? 0) / 2,
+      }
+    },
+    [getAbsolutePosition],
+  )
 
-  const sourceCenter = getCenter(sourceNode)
-  const targetCenter = getCenter(targetNode)
+  const sourceCenter = sourceNode ? getCenter(sourceNode) : { x: 0, y: 0 }
+  const targetCenter = targetNode ? getCenter(targetNode) : { x: 0, y: 0 }
   const { sourcePosition, targetPosition } = pickPositions(sourceCenter, targetCenter)
 
   // For each node/side, spread multiple edges along that side to avoid stacking on a single dot.
@@ -101,6 +104,8 @@ export function EdgeModel({
   }
 
   const offsets = useMemo(() => {
+    if (!hasEndpoints) return new Map<string, number>()
+
     const list = edges
       .map((edge) => {
         const sNode = nodeMap.get(edge.source)
@@ -154,7 +159,7 @@ export function EdgeModel({
       })
     }
     return offsets
-  }, [edges, getCenter, nodeMap])
+  }, [edges, getCenter, hasEndpoints, nodeMap])
 
   const sourceOffset = offsets.get(`${id}:source`) ?? 0.5
   const targetOffset = offsets.get(`${id}:target`) ?? 0.5
@@ -238,6 +243,10 @@ export function EdgeModel({
 
   const sourceSideUsed = sourcePick?.side ?? sourcePosition
   const targetSideUsed = targetPick?.side ?? targetPosition
+
+  if (!hasEndpoints) {
+    return null
+  }
 
   const sourcePoint = sourcePick?.point ?? anchorPoint(sourceNode, sourceSideUsed, sourceOffset)
   const targetPoint = targetPick?.point ?? anchorPoint(targetNode, targetSideUsed, targetOffset)

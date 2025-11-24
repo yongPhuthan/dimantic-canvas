@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { Children, isValidElement } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 
@@ -11,6 +12,7 @@ import type {
 } from './types'
 
 export function Layout(_props: LayoutProps) {
+  void _props
   // Declarative-only component; parsing happens via parseLayoutTree.
   return null
 }

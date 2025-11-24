@@ -30,6 +30,7 @@ export interface RawGraphEdge {
   source: string
   target: string
   type: UseCaseEdgeKind
+  label?: string
 }
 
 export interface RawUseCaseGraph {
