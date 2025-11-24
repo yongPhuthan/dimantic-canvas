@@ -48,7 +48,7 @@
 * **FR-REN-03 (Component Registry):** สร้าง **Custom Nodes** (React Components) ตาม `type`:
     * `ACTOR`: Component แสดง `img/svg` รูปคน (Stickman) พร้อม Label ด้านล่าง
     * `USE_CASE`: Component รูปทรงวงรี (`border-radius: 50%`) มี Text ตรงกลาง
-    * `SYSTEM_BOUNDARY`: Component แบบ **Group Node** (โปร่งใส มีขอบ) ที่รองรับ `parentId` เพื่อครอบ Node ลูก
+    * `SYSTEM_BOUNDARY`: Component แบบ **Group Node** (โปร่งใส มีขอบ) ที่รองรับ `parentId` เพื่อครอบ Node ลูก (ใช้งานผ่าน JSX `<SubgraphNode />`)
 * **FR-REN-04 (Styling):** ใช้ **Tailwind CSS** ในการตกแต่ง Node (Shadow, Border, Color) แทนการวาด Graphics
 
 ### **4.2 Auto Layout Engine (The Middleware)**
@@ -92,7 +92,7 @@
     * `nodeTypes/`:
         * `ActorNode.tsx`
         * `UseCaseNode.tsx`
-        * `SystemNode.tsx` (Group Node)
+        * `SystemNode.tsx` / `SubgraphNodeModel.tsx` (Group Node)
     * `edgeTypes/`:
         * `FloatingEdge.tsx` (Custom Edge ที่คำนวณจุดตัดขอบ Node)
 
@@ -118,10 +118,10 @@
 
 ## อัปเดตความคืบหน้า (Implementation Notes)
 
-- Node รูปทรงเดียว (NodeModel) ใช้กับ Actor/UseCase/Boundary (SubgraphNodeModel สำหรับ boundary โปร่งใส, dashed, resize ได้)
+- JSX API ใช้ `<SubgraphNode>` แทน `kind="SYSTEM_BOUNDARY"`: มี grid config (`columns`, `rows`, `spacing`, `justifyContent` default `space-around`) และ auto-parent ลูกไปยังกลุ่ม
+- Node รูปทรงเดียว (NodeModel) ใช้กับ Actor/UseCase; SubgraphNodeModel สำหรับ boundary โปร่งใส, dashed, resize ได้
 - EdgeModel เดียวทั้งระบบ: เส้น solid, marker arrow ขยาย, label อยู่ชั้นบนสุด (z-index สูง) คลิกแก้ข้อความได้
-- Layout กลางใช้ `useAutoLayout` เพียงตัวเดียว (รวม pre-layout hints): actor ถูก bias ไปคอลัมน์ซ้าย/ขวา, node อื่นวางกริดหยาบก่อน ELK
+- Layout กลางใช้ pre-layout grid (ตาม props) ก่อนส่ง ELK: คำนวณ bounding box ของกลุ่มและตำแหน่งลูก จากนั้น ELK คุม graph ใหญ่
 - ELK ตั้ง spacing/padding สูง + orthogonal routing + label spacing เพื่อหลีกเลี่ยงเส้น/label เบียด; snap-to-grid 280x280 ใน React Flow
-- Bias handle: ถ้า node อยู่ใกล้ขอบ จะเลือก side ติดขอบก่อน; cap handle ต่อด้าน และแชร์เมื่อเต็ม
 - Edge สามารถลากปลายเส้นได้ (updatable=true, edgeUpdaterRadius 20) แม้จะยังมี warning จาก React Flow API
 - สี node ปัจจุบันเป็นส้มเพื่อดีบักการทับ (เปลี่ยนกลับได้ตามต้องการ)
