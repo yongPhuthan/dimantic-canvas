@@ -4,9 +4,32 @@ import type { UseCaseEdgeKind, UseCaseNodeKind } from '../types/graph'
 
 export type DiagramNodeKind = UseCaseNodeKind
 export type DiagramEdgeKind = UseCaseEdgeKind
+export type JustifyContentValue =
+  | 'center'
+  | 'start'
+  | 'end'
+  | 'flex-start'
+  | 'flex-end'
+  | 'left'
+  | 'right'
+  | 'normal'
+  | 'space-between'
+  | 'space-around'
+  | 'space-evenly'
+  | 'stretch'
+  | 'safe center'
+  | 'unsafe center'
+  | 'inherit'
+  | 'initial'
+  | 'revert'
+  | 'revert-layer'
+  | 'unset'
+
 export type SubgraphGridConfig = {
   columns?: number
+  rows?: number
   spacing?: number
+  justifyContent?: JustifyContentValue
 }
 
 export type LayoutDirection = 'RIGHT' | 'DOWN'

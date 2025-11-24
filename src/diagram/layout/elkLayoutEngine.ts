@@ -46,7 +46,6 @@ const CHAR_WIDTH = 8
 const LABEL_PADDING = 48
 const GRID_GAP_UNIT = 8
 const LABEL_BAND_HEIGHT = 28
-const MIN_COLUMN_WIDTH = 48
 const MIN_GAP = 4
 
 function labelBasedWidth(label: string, base: number) {
@@ -78,6 +77,38 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
     childrenByParent.set(node.parentId, list)
   })
 
+  const normalizeJustify = (value: string | undefined) => {
+    switch (value) {
+      case 'center':
+      case 'safe center':
+      case 'unsafe center':
+        return 'center' as const
+      case 'end':
+      case 'flex-end':
+      case 'right':
+        return 'end' as const
+      case 'space-between':
+        return 'space-between' as const
+      case 'space-evenly':
+        return 'space-evenly' as const
+      case 'stretch':
+        return 'stretch' as const
+      case 'start':
+      case 'flex-start':
+      case 'left':
+      case 'normal':
+        return 'start' as const
+      case 'space-around':
+      case 'inherit':
+      case 'initial':
+      case 'revert':
+      case 'revert-layer':
+      case 'unset':
+      default:
+        return 'space-around' as const
+    }
+  }
+
   const compute = (subgraphId: string): SubgraphLayout => {
     if (layouts.has(subgraphId)) return layouts.get(subgraphId)!
 
@@ -97,53 +128,126 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
       return layout
     }
 
-    const columns = Math.max(1, meta.grid?.columns ?? 12)
-    const gap = Math.max(MIN_GAP, (meta.grid?.spacing ?? 2) * GRID_GAP_UNIT)
-    const padding = gap
-    const defaultSpan = Math.min(columns, 6)
+    const baseColumns = meta.grid?.columns
+    const gapDefault = Math.max(MIN_GAP, (meta.grid?.spacing ?? 2) * GRID_GAP_UNIT)
+    const padding = gapDefault
+    const defaultSpan = Math.min(baseColumns ?? 12, 6)
+    const justify = normalizeJustify(meta.grid?.justifyContent)
+    const rowsHint = meta.grid?.rows ? Math.max(1, meta.grid.rows) : undefined
 
     const spans = children.map((child) => {
       const hint = graph.hints.get(child.id)
       const span = hint?.md ?? hint?.sm ?? hint?.xs ?? defaultSpan
-      return Math.min(columns, Math.max(1, span))
+      return Math.max(1, span)
     })
 
-    const columnWidth = Math.max(
-      MIN_COLUMN_WIDTH,
-      ...children.map((child, idx) => {
-        const span = spans[idx] ?? 1
-        const size = sizeMap.get(child.id) ?? BASE_SIZE[child.type]
-        return size.width / Math.max(1, span)
-      }),
-    )
+    const totalSpan = spans.reduce((sum, span) => sum + span, 0) || children.length
+    const maxSpan = spans.reduce((max, span) => Math.max(max, span), 1)
 
-    let cursor = 0
-    let y = padding
-    let rowHeight = 0
-    let maxColumnsUsed = 0
-    const placements: { childId: string; x: number; y: number }[] = []
+    const layoutWithColumns = (cols: number) => {
+      type RowItem = { childId: string; width: number }
+      type Row = { items: RowItem[]; height: number }
+      const rows: Row[] = []
+      let cursor = 0
+      let rowHeight = 0
+      let currentItems: RowItem[] = []
 
-    children.forEach((child, idx) => {
-      const span = spans[idx] ?? 1
-      if (cursor + span > columns && cursor > 0) {
-        y += rowHeight + gap
-        cursor = 0
+      const flushRow = () => {
+        if (currentItems.length === 0) return
+        rows.push({ items: currentItems, height: rowHeight })
+        currentItems = []
         rowHeight = 0
+        cursor = 0
       }
 
-      const size = sizeMap.get(child.id) ?? BASE_SIZE[child.type]
-      const x = padding + cursor * (columnWidth + gap)
-      placements.push({ childId: child.id, x, y })
-      cursor += span
-      rowHeight = Math.max(rowHeight, size.height)
-      maxColumnsUsed = Math.max(maxColumnsUsed, cursor)
-    })
+      children.forEach((child, idx) => {
+        const spanDesired = spans[idx] ?? 1
+        const span = Math.min(cols, spanDesired)
+        if (cursor + span > cols && cursor > 0) {
+          flushRow()
+        }
 
-    const usedCols = Math.max(1, Math.min(columns, maxColumnsUsed || columns))
-    const width = Math.max(baseSize.width, padding * 2 + usedCols * columnWidth + (usedCols - 1) * gap)
-    const height = Math.max(baseSize.height, y + rowHeight + padding + LABEL_BAND_HEIGHT)
+        const size = sizeMap.get(child.id) ?? BASE_SIZE[child.type]
+        currentItems.push({ childId: child.id, width: size.width })
+        cursor += span
+        rowHeight = Math.max(rowHeight, size.height)
+      })
+      flushRow()
 
-    const layout = { size: { width, height }, placements }
+      let y = padding
+      let maxRowWidth = baseSize.width - padding * 2
+      const placements: { childId: string; x: number; y: number }[] = []
+
+      const resolveOffsets = (count: number, rowAvailable: number, contentWidth: number) => {
+        const widthOnly = contentWidth - gapDefault * Math.max(count - 1, 0)
+        if (count <= 1) {
+          if (justify === 'center') return { offset: (rowAvailable - contentWidth) / 2, gap: gapDefault }
+          if (justify === 'end') return { offset: rowAvailable - contentWidth, gap: gapDefault }
+          return { offset: 0, gap: gapDefault }
+        }
+
+        switch (justify) {
+          case 'end':
+            return { offset: rowAvailable - contentWidth, gap: gapDefault }
+          case 'center':
+            return { offset: (rowAvailable - contentWidth) / 2, gap: gapDefault }
+          case 'space-between': {
+            const gap = (rowAvailable - widthOnly) / (count - 1)
+            return { offset: 0, gap }
+          }
+          case 'space-evenly': {
+            const gap = (rowAvailable - widthOnly) / (count + 1)
+            return { offset: gap, gap }
+          }
+          case 'stretch':
+          case 'space-around': {
+            const gap = (rowAvailable - widthOnly) / count
+            return { offset: gap / 2, gap }
+          }
+          case 'start':
+          default:
+            return { offset: 0, gap: gapDefault }
+        }
+      }
+
+      rows.forEach((row) => {
+        const count = row.items.length
+        const contentWidth = row.items.reduce((sum, item) => sum + item.width, 0) + gapDefault * Math.max(count - 1, 0)
+        const rowAvailable = Math.max(contentWidth, baseSize.width - padding * 2)
+        const { offset, gap } = resolveOffsets(count, rowAvailable, contentWidth)
+
+        let x = padding + offset
+        row.items.forEach((item, index) => {
+          placements.push({ childId: item.childId, x, y })
+          x += item.width
+          if (index < count - 1) x += gap
+        })
+
+        const rowUsedWidth = Math.max(contentWidth, rowAvailable)
+        maxRowWidth = Math.max(maxRowWidth, rowUsedWidth)
+        y += row.height + gapDefault
+      })
+
+      const width = Math.max(baseSize.width, padding * 2 + maxRowWidth)
+      const height = Math.max(baseSize.height, y - gapDefault + padding + LABEL_BAND_HEIGHT)
+
+      return { placements, width, height, rowsUsed: rows.length }
+    }
+
+    const derivedColumnsFromRows = rowsHint ? Math.ceil(totalSpan / rowsHint) : undefined
+    let columns = Math.max(1, baseColumns ?? derivedColumnsFromRows ?? 12, maxSpan)
+
+    let computed = layoutWithColumns(columns)
+    if (rowsHint) {
+      let attempts = 0
+      while (computed.rowsUsed > rowsHint && attempts < 24) {
+        columns += 1
+        computed = layoutWithColumns(columns)
+        attempts += 1
+      }
+    }
+
+    const layout = { size: { width: computed.width, height: computed.height }, placements: computed.placements }
     layouts.set(subgraphId, layout)
     sizeMap.set(subgraphId, layout.size)
     return layout
