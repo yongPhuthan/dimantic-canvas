@@ -245,18 +245,36 @@ export function EdgeModel({
     return { x: abs.x + width * offset, y: side === Position.Top ? abs.y : abs.y + height }
   }
 
-  const sourcePick = pickHandle(source, 'source', sourcePosition, targetCenter, sourceHandleId ?? undefined)
-  const targetPick = pickHandle(target, 'target', targetPosition, sourceCenter, targetHandleId ?? undefined)
+  const sourcePick = pickHandle(
+    source,
+    'source',
+    sourcePosition,
+    targetCenter,
+    plannedAttachment?.source?.handleId ?? sourceHandleId ?? undefined,
+  )
+  const targetPick = pickHandle(
+    target,
+    'target',
+    targetPosition,
+    sourceCenter,
+    plannedAttachment?.target?.handleId ?? targetHandleId ?? undefined,
+  )
 
-  const sourceSideUsed = sourcePick?.side ?? sourcePosition
-  const targetSideUsed = targetPick?.side ?? targetPosition
+  const sourceSideUsed = plannedAttachment?.source?.side ?? sourcePick?.side ?? sourcePosition
+  const targetSideUsed = plannedAttachment?.target?.side ?? targetPick?.side ?? targetPosition
 
   if (!hasEndpoints) {
     return null
   }
 
-  const sourcePoint = sourcePick?.point ?? anchorPoint(sourceNode!, sourceSideUsed, sourceOffset)
-  const targetPoint = targetPick?.point ?? anchorPoint(targetNode!, targetSideUsed, targetOffset)
+  const sourcePoint =
+    plannedAttachment?.source && sourceNode
+      ? anchorPoint(sourceNode, sourceSideUsed, sourceOffset)
+      : sourcePick?.point ?? anchorPoint(sourceNode!, sourceSideUsed, sourceOffset)
+  const targetPoint =
+    plannedAttachment?.target && targetNode
+      ? anchorPoint(targetNode, targetSideUsed, targetOffset)
+      : targetPick?.point ?? anchorPoint(targetNode!, targetSideUsed, targetOffset)
 
   const sourceX = sourcePoint.x
   const sourceY = sourcePoint.y

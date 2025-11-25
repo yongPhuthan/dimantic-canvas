@@ -4,6 +4,7 @@ import { EdgeModel } from '../render/edgeTypes/FloatingEdge'
 import { ActorNode } from '../render/nodeTypes/ActorNode'
 import { SystemNode } from '../render/nodeTypes/SystemNode'
 import { UseCaseNode } from '../render/nodeTypes/UseCaseNode'
+import { anchorId, anchorOffsets } from './handleAnchors'
 import { USE_CASE_EDGE_TYPE, USE_CASE_NODE_TYPE, type RawGraphEdge, type RawGraphNode, type UseCaseEdgeData, type UseCaseNodeData, type UseCaseReactFlowEdge, type UseCaseReactFlowNode } from '../types/graph'
 import type { LayoutResult } from '../layout/elkLayoutEngine'
 
@@ -15,7 +16,7 @@ const nodeTypes = {
 
 const edgeTypes = { floating: EdgeModel }
 
-const defaultHandles: Record<RawGraphNode['type'], UseCaseNodeData['handleLayout']> = {
+const defaultHandles: Record<RawGraphNode['type'], NonNullable<UseCaseNodeData['handleLayout']>> = {
   [USE_CASE_NODE_TYPE.ACTOR]: {
     top: { source: 0, target: 1 },
     right: { source: 2, target: 0 },
@@ -199,22 +200,17 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
     return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? Position.Right : Position.Left) : dy >= 0 ? Position.Bottom : Position.Top
   }
 
-  const emptyHandleLayout = (): UseCaseNodeData['handleLayout'] => ({
+  const emptyHandleLayout = (): HandleLayout => ({
     top: { source: 0, target: 0 },
     right: { source: 0, target: 0 },
     bottom: { source: 0, target: 0 },
     left: { source: 0, target: 0 },
   })
 
-  const plannedHandles = new Map<string, UseCaseNodeData['handleLayout']>()
-  const bumpHandle = (nodeId: string, side: Position, role: 'source' | 'target') => {
-    const entry = plannedHandles.get(nodeId) ?? emptyHandleLayout()
-    const key =
-      side === Position.Top ? 'top' : side === Position.Right ? 'right' : side === Position.Bottom ? 'bottom' : 'left'
-    entry[key][role] += 1
-    plannedHandles.set(nodeId, entry)
-  }
+  type HandleLayout = NonNullable<UseCaseNodeData['handleLayout']>
 
+  const plannedHandles = new Map<string, HandleLayout>()
+  const buckets = new Map<string, string[]>() // key: nodeId:side:role -> edgeIds
   const attachmentByEdge = new Map<string, UseCaseEdgeData['attachments']>()
 
   layout.edges.forEach((edge) => {
@@ -235,8 +231,14 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
       targetSide = pickExternalSide(edge.target, edge.source)
     }
 
-    bumpHandle(edge.source, sourceSide, 'source')
-    bumpHandle(edge.target, targetSide, 'target')
+    const bucketKeySource = `${edge.source}:${sourceSide}:source`
+    const bucketKeyTarget = `${edge.target}:${targetSide}:target`
+    const listSource = buckets.get(bucketKeySource) ?? []
+    listSource.push(edge.id)
+    buckets.set(bucketKeySource, listSource)
+    const listTarget = buckets.get(bucketKeyTarget) ?? []
+    listTarget.push(edge.id)
+    buckets.set(bucketKeyTarget, listTarget)
 
     attachmentByEdge.set(edge.id, {
       classification,
@@ -245,9 +247,46 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
     })
   })
 
-  const resolveHandleLayout = (nodeId: string, kind: RawGraphNode['type']) => {
-    const base = defaultHandles[kind] ?? emptyHandleLayout()
-    const planned = plannedHandles.get(nodeId) ?? emptyHandleLayout()
+  buckets.forEach((edgeIds, key) => {
+    const [nodeId, sideRaw, role] = key.split(':') as [string, Position, 'source' | 'target']
+    const count = edgeIds.length
+    const offsets = anchorOffsets(count)
+    const entry: HandleLayout = plannedHandles.get(nodeId) ?? emptyHandleLayout()
+    switch (sideRaw) {
+      case Position.Top:
+        entry.top[role] = count
+        break
+      case Position.Right:
+        entry.right[role] = count
+        break
+      case Position.Bottom:
+        entry.bottom[role] = count
+        break
+      case Position.Left:
+      default:
+        entry.left[role] = count
+        break
+    }
+    plannedHandles.set(nodeId, entry)
+
+    edgeIds.forEach((edgeId, idx) => {
+      const handle = anchorId(sideRaw, role, idx, count)
+      const attachment = attachmentByEdge.get(edgeId)
+      if (!attachment) return
+      if (role === 'source') {
+        attachment.source.handleId = handle
+        attachment.source.offset = offsets[idx] ?? 0.5
+      } else {
+        attachment.target.handleId = handle
+        attachment.target.offset = offsets[idx] ?? 0.5
+      }
+      attachmentByEdge.set(edgeId, attachment)
+    })
+  })
+
+  const resolveHandleLayout = (nodeId: string, kind: RawGraphNode['type']): HandleLayout => {
+    const base: HandleLayout = defaultHandles[kind] ?? emptyHandleLayout()
+    const planned: HandleLayout = plannedHandles.get(nodeId) ?? emptyHandleLayout()
     return {
       top: {
         source: Math.max(base.top.source, planned.top.source),

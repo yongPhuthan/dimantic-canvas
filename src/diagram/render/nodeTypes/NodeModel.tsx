@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { UseCaseReactFlowNode } from '../../types/graph'
+import { anchorId, anchorOffsets } from '../../core/handleAnchors'
 
 const handleVisibility = (selected: boolean) =>
   selected
@@ -9,9 +10,6 @@ const handleVisibility = (selected: boolean) =>
 const handleBase = (selected: boolean) =>
   `h-3 w-3 rounded-full border-2 border-white bg-sky-400 shadow ring-2 ring-white transition duration-150 ${handleVisibility(selected)}`
 
-const sideLabel = (side: Position) =>
-  side === Position.Top ? 'top' : side === Position.Right ? 'right' : side === Position.Bottom ? 'bottom' : 'left'
-
 function renderHandles(
   side: Position,
   type: 'source' | 'target',
@@ -19,10 +17,10 @@ function renderHandles(
   selected: boolean,
 ) {
   if (count <= 0) return null
-  const spread = (index: number, total: number) => `${((index + 1) / (total + 1)) * 100}%`
+  const offsets = anchorOffsets(count)
   return Array.from({ length: count }).map((_, idx) => {
-    const offset = spread(idx, count)
-    const id = `${sideLabel(side)}-${type}-${idx + 1}-of-${count}`
+    const offset = `${offsets[idx] * 100}%`
+    const id = anchorId(side, type, idx, count)
     const style =
       side === Position.Left || side === Position.Right
         ? { top: offset, transform: 'translate(-50%, -50%)' }
