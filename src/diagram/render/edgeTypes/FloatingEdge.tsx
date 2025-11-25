@@ -92,7 +92,10 @@ export function EdgeModel({
 
   const sourceCenter = sourceNode ? getCenter(sourceNode) : { x: 0, y: 0 }
   const targetCenter = targetNode ? getCenter(targetNode) : { x: 0, y: 0 }
-  const { sourcePosition, targetPosition } = pickPositions(sourceCenter, targetCenter)
+  const plannedAttachment = data?.attachments
+  const fallbackSides = pickPositions(sourceCenter, targetCenter)
+  const sourcePosition = plannedAttachment?.source?.side ?? fallbackSides.sourcePosition
+  const targetPosition = plannedAttachment?.target?.side ?? fallbackSides.targetPosition
 
   // For each node/side, spread multiple edges along that side to avoid stacking on a single dot.
   type Attachment = {
@@ -114,7 +117,11 @@ export function EdgeModel({
 
         const sCenter = getCenter(sNode)
         const tCenter = getCenter(tNode)
-        const { sourcePosition: sSide, targetPosition: tSide } = pickPositions(sCenter, tCenter)
+        const attachment = (edge.data as UseCaseEdgeData | undefined)?.attachments
+        const sides = attachment?.source?.side && attachment?.target?.side
+          ? { sourcePosition: attachment.source.side, targetPosition: attachment.target.side }
+          : pickPositions(sCenter, tCenter)
+        const { sourcePosition: sSide, targetPosition: tSide } = sides
 
         const axisForSide = (side: Position, otherCenter: { x: number; y: number }) =>
           side === Position.Left || side === Position.Right ? otherCenter.y : otherCenter.x

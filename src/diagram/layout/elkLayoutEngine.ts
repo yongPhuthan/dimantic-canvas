@@ -30,9 +30,11 @@ type ElkGraphInput = {
 type ElkLayoutComputed = ElkLayoutNode & { children?: ElkLayoutNode[] }
 
 export type LayoutResultNode = RawGraphNode & { x: number; y: number; width: number; height: number }
-export type LayoutResult = { nodes: LayoutResultNode[]; edges: RawGraphEdge[] }
+export type SubgraphGridPlacement = { childId: string; x: number; y: number; row: number; column: number }
+export type SubgraphGridMeta = { columns: number; rows: number; placements: SubgraphGridPlacement[] }
+export type LayoutResult = { nodes: LayoutResultNode[]; edges: RawGraphEdge[]; subgraphMeta: Record<string, SubgraphGridMeta> }
 type NodeSize = { width: number; height: number }
-type SubgraphLayout = { size: NodeSize; placements: { childId: string; x: number; y: number }[] }
+type SubgraphLayout = { size: NodeSize; placements: SubgraphGridPlacement[]; columns: number; rows: number }
 
 const elk = new ELK()
 
@@ -122,7 +124,7 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
 
     if (!meta || children.length === 0) {
       const size = { width: baseSize.width, height: baseSize.height + LABEL_BAND_HEIGHT }
-      const layout = { size, placements: [] }
+      const layout: SubgraphLayout = { size, placements: [], columns: 1, rows: 1 }
       layouts.set(subgraphId, layout)
       sizeMap.set(subgraphId, size)
       return layout
@@ -145,7 +147,7 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
     const maxSpan = spans.reduce((max, span) => Math.max(max, span), 1)
 
     const layoutWithColumns = (cols: number) => {
-      type RowItem = { childId: string; width: number }
+      type RowItem = { childId: string; width: number; span: number }
       type Row = { items: RowItem[]; height: number }
       const rows: Row[] = []
       let cursor = 0
@@ -168,7 +170,7 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
         }
 
         const size = sizeMap.get(child.id) ?? BASE_SIZE[child.type]
-        currentItems.push({ childId: child.id, width: size.width })
+        currentItems.push({ childId: child.id, width: size.width, span })
         cursor += span
         rowHeight = Math.max(rowHeight, size.height)
       })
@@ -176,7 +178,7 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
 
       let y = padding
       let maxRowWidth = baseSize.width - padding * 2
-      const placements: { childId: string; x: number; y: number }[] = []
+      const placements: SubgraphGridPlacement[] = []
 
       const resolveOffsets = (count: number, rowAvailable: number, contentWidth: number) => {
         const widthOnly = contentWidth - gapDefault * Math.max(count - 1, 0)
@@ -210,16 +212,18 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
         }
       }
 
-      rows.forEach((row) => {
+      rows.forEach((row, rowIndex) => {
         const count = row.items.length
         const contentWidth = row.items.reduce((sum, item) => sum + item.width, 0) + gapDefault * Math.max(count - 1, 0)
         const rowAvailable = Math.max(contentWidth, baseSize.width - padding * 2)
         const { offset, gap } = resolveOffsets(count, rowAvailable, contentWidth)
 
         let x = padding + offset
+        let columnCursor = 0
         row.items.forEach((item, index) => {
-          placements.push({ childId: item.childId, x, y })
+          placements.push({ childId: item.childId, x, y, row: rowIndex, column: columnCursor })
           x += item.width
+          columnCursor += item.span
           if (index < count - 1) x += gap
         })
 
@@ -247,7 +251,12 @@ function applySubgraphGrid(graph: GraphModel, sizeMap: Map<string, NodeSize>): M
       }
     }
 
-    const layout = { size: { width: computed.width, height: computed.height }, placements: computed.placements }
+    const layout: SubgraphLayout = {
+      size: { width: computed.width, height: computed.height },
+      placements: computed.placements,
+      columns,
+      rows: computed.rowsUsed,
+    }
     layouts.set(subgraphId, layout)
     sizeMap.set(subgraphId, layout.size)
     return layout
@@ -331,6 +340,14 @@ function buildElkGraph(
 export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Promise<LayoutResult> {
   const sizeMap = resolveNodeSizes(graph, config)
   const subgraphLayouts = applySubgraphGrid(graph, sizeMap)
+  const subgraphMeta: Record<string, SubgraphGridMeta> = {}
+  subgraphLayouts.forEach((layout, id) => {
+    subgraphMeta[id] = {
+      columns: layout.columns,
+      rows: layout.rows,
+      placements: layout.placements,
+    }
+  })
 
   const placementByChild = new Map<string, { x: number; y: number; parentId: string }>()
   subgraphLayouts.forEach((layout, parentId) => {
@@ -357,6 +374,7 @@ export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Pro
         }
       }),
       edges: graph.edges,
+      subgraphMeta,
     }
   }
 
@@ -402,5 +420,6 @@ export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Pro
   return {
     nodes: flattened,
     edges: graph.edges,
+    subgraphMeta,
   }
 }

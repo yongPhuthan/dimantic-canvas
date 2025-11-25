@@ -1,4 +1,4 @@
-import type { Edge, Node } from '@xyflow/react'
+import type { Edge, Node, Position } from '@xyflow/react'
 
 export const USE_CASE_NODE_TYPE = {
   ACTOR: 'ACTOR',
@@ -56,6 +56,11 @@ export interface UseCaseNodeData extends Record<string, unknown> {
 export interface UseCaseEdgeData extends Record<string, unknown> {
   label?: string
   kind: UseCaseEdgeKind
+  attachments?: {
+    classification: 'internal' | 'external'
+    source: { side: Position; handleId?: string; offset?: number }
+    target: { side: Position; handleId?: string; offset?: number }
+  }
 }
 
 export type UseCaseReactFlowNode = Node<UseCaseNodeData, UseCaseNodeKind>
