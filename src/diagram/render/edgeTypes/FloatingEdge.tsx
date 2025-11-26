@@ -290,7 +290,7 @@ export function EdgeModel({
     targetPosition: targetSideUsed,
   })
 
-  const strokeColor = (style as { stroke?: string } | undefined)?.stroke ?? '#cbd5e1'
+  const strokeColor = (style as { stroke?: string } | undefined)?.stroke ?? 'hsl(var(--muted-foreground))'
 
   // Always use a custom marker per edge/side so orientation follows the target side.
   const appliedMarkerEnd = `url(#floating-arrow-${rfId}-${id}-${targetSideUsed})`
@@ -330,7 +330,9 @@ export function EdgeModel({
         markerStart={appliedMarkerStart}
         markerEnd={appliedMarkerEnd}
         interactionWidth={40}
-        className={selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_rgba(56,189,248,0.7)]' : ''}
+        className={
+          selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_hsl(var(--ring)/0.55)]' : ''
+        }
       />
       <EdgeLabelRenderer>
         {(() => {
@@ -370,12 +372,12 @@ export function EdgeModel({
                 pointerEvents: 'auto',
                 fontSize: 12,
                 fontWeight: 600,
-                color: '#e2e8f0',
-                backgroundColor: 'rgba(15,23,42,0.92)',
+                color: 'hsl(var(--popover-foreground))',
+                backgroundColor: 'hsl(var(--popover) / 0.92)',
                 padding: '2px 8px',
                 borderRadius: 999,
-                border: '1px solid rgba(148,163,184,0.6)',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+                border: '1px solid hsl(var(--border))',
+                boxShadow: 'var(--shadow-popover)',
                 whiteSpace: 'nowrap',
                 cursor: 'pointer',
                 zIndex: 40,

@@ -6,9 +6,9 @@ import type { UseCaseReactFlowNode } from '../../types/graph'
 const handleVisibility = () => 'opacity-0 pointer-events-none scale-75'
 
 const handleBase = () =>
-  `h-3 w-3 rounded-full border-2 border-white bg-sky-400 shadow ring-2 ring-white transition duration-150 ${handleVisibility()}`
+  `h-3 w-3 rounded-full border-2 shadow ring-2 transition duration-150 ${handleVisibility()}`
 
-function renderHandles(side: Position, type: 'source' | 'target', count: number) {
+function renderHandles(side: Position, type: 'source' | 'target', count: number, accent: string) {
   if (count <= 0) return null
   const offsets = anchorOffsets(count)
   return Array.from({ length: count }).map((_, idx) => {
@@ -27,7 +27,14 @@ function renderHandles(side: Position, type: 'source' | 'target', count: number)
         className={`${handleBase()} ${
           side === Position.Top ? '-mt-1' : side === Position.Bottom ? '-mb-1' : side === Position.Left ? '-ml-1' : '-mr-1'
         }`}
-        style={style}
+        style={{
+          ...style,
+          backgroundColor: accent,
+          borderColor: 'hsl(var(--card))',
+          boxShadow: '0 0 0 1px hsl(var(--background))',
+          // @ts-expect-error CSS custom property for ring
+          '--tw-ring-color': 'hsl(var(--ring))',
+        }}
       />
     )
   })
@@ -35,6 +42,7 @@ function renderHandles(side: Position, type: 'source' | 'target', count: number)
 
 export function SubgraphNodeModel({ id, data, selected }: NodeProps<UseCaseReactFlowNode>) {
   const layout = data.handleLayout
+  const accent = data.accentColor ?? 'hsl(var(--primary))'
   const updateNodeInternals = useUpdateNodeInternals()
   const handleLayoutKey = useMemo(
     () =>
@@ -49,8 +57,8 @@ export function SubgraphNodeModel({ id, data, selected }: NodeProps<UseCaseReact
 
   return (
     <div
-      className={`group relative h-full w-full rounded-2xl border-2 border-dashed bg-transparent p-3 text-slate-100 ${
-        selected ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-slate-900' : ''
+      className={`group relative h-full w-full rounded-[--radius-lg] border-2 border-dashed border-border bg-transparent p-3 text-foreground ${
+        selected ? 'ring-2 ring-[hsl(var(--ring))] ring-offset-2 ring-offset-[hsl(var(--card))]' : ''
       }`}
       style={{ zIndex: 0 }}
     >
@@ -58,32 +66,32 @@ export function SubgraphNodeModel({ id, data, selected }: NodeProps<UseCaseReact
         isVisible={selected}
         minWidth={120}
         minHeight={120}
-        lineStyle={{ borderColor: '#38bdf8', borderWidth: 2 }}
+        lineStyle={{ borderColor: accent, borderWidth: 2 }}
         handleStyle={{
           width: 12,
           height: 12,
-          borderRadius: 2,
-          background: '#38bdf8',
-          border: '1px solid #0f6abf',
-          boxShadow: '0 0 0 1px #d9eafd',
+          borderRadius: 4,
+          background: accent,
+          border: '1px solid hsl(var(--ring))',
+          boxShadow: '0 0 0 1px hsl(var(--card))',
         }}
       />
-      <div className="pointer-events-none absolute -top-4 left-3 flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/90 px-3 py-1 text-xs font-semibold shadow-lg">
-        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-        <span className="text-slate-100">{data.label}</span>
+      <div className="pointer-events-none absolute -top-4 left-3 flex items-center gap-2 rounded-full border border-border/70 bg-card/90 px-3 py-1 text-xs font-semibold text-foreground shadow-card">
+        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+        <span>{data.label}</span>
       </div>
 
-      {renderHandles(Position.Top, 'target', layout?.top.target ?? 0)}
-      {renderHandles(Position.Top, 'source', layout?.top.source ?? 0)}
+      {renderHandles(Position.Top, 'target', layout?.top.target ?? 0, accent)}
+      {renderHandles(Position.Top, 'source', layout?.top.source ?? 0, accent)}
 
-      {renderHandles(Position.Right, 'source', layout?.right.source ?? 0)}
-      {renderHandles(Position.Right, 'target', layout?.right.target ?? 0)}
+      {renderHandles(Position.Right, 'source', layout?.right.source ?? 0, accent)}
+      {renderHandles(Position.Right, 'target', layout?.right.target ?? 0, accent)}
 
-      {renderHandles(Position.Bottom, 'target', layout?.bottom.target ?? 0)}
-      {renderHandles(Position.Bottom, 'source', layout?.bottom.source ?? 0)}
+      {renderHandles(Position.Bottom, 'target', layout?.bottom.target ?? 0, accent)}
+      {renderHandles(Position.Bottom, 'source', layout?.bottom.source ?? 0, accent)}
 
-      {renderHandles(Position.Left, 'source', layout?.left.source ?? 0)}
-      {renderHandles(Position.Left, 'target', layout?.left.target ?? 0)}
+      {renderHandles(Position.Left, 'source', layout?.left.source ?? 0, accent)}
+      {renderHandles(Position.Left, 'target', layout?.left.target ?? 0, accent)}
     </div>
   )
 }

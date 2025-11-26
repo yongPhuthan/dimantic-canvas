@@ -46,13 +46,17 @@ export function ReactFlowCanvas({ nodes: layoutNodes, edges: layoutEdges, isLoad
 
   useEffect(() => {
     if (!isLoading && layoutNodes.length > 0) {
-      requestAnimationFrame(() => fitView({ padding: 0.2 }))
+      const fit = () => fitView({ padding: 0.2, includeHiddenNodes: true })
+      requestAnimationFrame(fit)
+      const timeout = window.setTimeout(fit, 80) // rerun after layout settles
+      return () => window.clearTimeout(timeout)
     }
   }, [fitView, isLoading, layoutNodes])
 
   return (
     <div className="h-full w-full">
       <ReactFlow
+        onInit={(instance) => instance.fitView({ padding: 0.2, duration: 0 })}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
@@ -60,28 +64,34 @@ export function ReactFlowCanvas({ nodes: layoutNodes, edges: layoutEdges, isLoad
         nodeTypes={diagramNodeTypes}
         edgeTypes={diagramEdgeTypes}
         proOptions={{ hideAttribution: true }}
-        fitView={false}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.9 }}
+        fitView
+        fitViewOptions={{ padding: 0.2, includeHiddenNodes: true }}
         panOnScroll
         zoomOnScroll
         elevateEdgesOnSelect
       >
-        <Background gap={24} color="#1e293b" />
-        <MiniMap pannable zoomable nodeStrokeColor="#94a3b8" maskColor="rgba(15,23,42,0.85)" />
+        <Background gap={24} color="hsl(var(--border))" />
+        <MiniMap
+          pannable
+          zoomable
+          nodeStrokeColor="hsl(var(--muted-foreground))"
+          maskColor="hsl(var(--background) / 0.9)"
+          style={{ display: 'none' }} // keep registered but hidden for now
+        />
         <Controls />
 
-        <Panel position="top-left" className="rounded-lg bg-slate-900/90 px-3 py-2 text-xs text-slate-100 shadow-lg backdrop-blur">
+        <Panel position="top-left" className="rounded-lg border border-border bg-card/90 px-3 py-2 text-xs text-foreground shadow-card backdrop-blur">
           <div className="font-semibold">Use Case Diagram</div>
-          <div className="text-[11px] opacity-80">Declarative JSX API · ELK auto-layout · React Flow 12</div>
+          <div className="text-[11px] text-muted-foreground">Declarative JSX API · ELK auto-layout · React Flow 12</div>
         </Panel>
 
         {isLoading ? (
-          <Panel position="bottom-left" className="rounded-lg bg-slate-900/80 px-3 py-1 text-xs text-slate-100 shadow">
+          <Panel position="bottom-left" className="rounded-lg border border-border bg-card/80 px-3 py-1 text-xs text-foreground shadow-card">
             Laying out graph with ELK...
           </Panel>
         ) : null}
         {error ? (
-          <Panel position="bottom-left" className="mt-2 rounded-lg bg-rose-900/80 px-3 py-1 text-xs text-rose-100 shadow">
+          <Panel position="bottom-left" className="mt-2 rounded-lg border border-destructive/40 bg-destructive/80 px-3 py-1 text-xs text-destructive-foreground shadow-card">
             Layout error: {error.message}
           </Panel>
         ) : null}

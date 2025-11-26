@@ -38,9 +38,9 @@ const defaultHandles: Record<RawGraphNode['type'], NonNullable<UseCaseNodeData['
 }
 
 const edgeStyles: Record<RawGraphEdge['type'], Edge<UseCaseEdgeData>['style']> = {
-  [USE_CASE_EDGE_TYPE.ASSOCIATION]: { stroke: '#cbd5e1', strokeWidth: 2 },
-  [USE_CASE_EDGE_TYPE.INCLUDE]: { stroke: '#cbd5e1', strokeWidth: 2, strokeDasharray: '6 6' },
-  [USE_CASE_EDGE_TYPE.EXTEND]: { stroke: '#cbd5e1', strokeWidth: 2, strokeDasharray: '6 6' },
+  [USE_CASE_EDGE_TYPE.ASSOCIATION]: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2 },
+  [USE_CASE_EDGE_TYPE.INCLUDE]: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2, strokeDasharray: '6 6' },
+  [USE_CASE_EDGE_TYPE.EXTEND]: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2, strokeDasharray: '6 6' },
 }
 
 const edgeLabels: Partial<Record<RawGraphEdge['type'], string>> = {
@@ -49,9 +49,9 @@ const edgeLabels: Partial<Record<RawGraphEdge['type'], string>> = {
 }
 
 const accentByKind: Record<RawGraphNode['type'], string> = {
-  [USE_CASE_NODE_TYPE.ACTOR]: '#22c55e',
-  [USE_CASE_NODE_TYPE.USE_CASE]: '#38bdf8',
-  [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: '#cbd5e1',
+  [USE_CASE_NODE_TYPE.ACTOR]: 'hsl(var(--accent))',
+  [USE_CASE_NODE_TYPE.USE_CASE]: 'hsl(var(--primary))',
+  [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: 'hsl(var(--border))',
 }
 
 export const diagramNodeTypes = nodeTypes
@@ -319,7 +319,7 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
       data: {
         label: node.label,
         kind: node.type,
-        accentColor: accentByKind[node.type] ?? '#38bdf8',
+        accentColor: accentByKind[node.type] ?? 'hsl(var(--primary))',
         handleLayout: resolveHandleLayout(node.id, node.type),
       },
       style: node.type === USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY ? { zIndex: 0 } : { zIndex: 10 },
@@ -339,7 +339,7 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
         ...(attachmentByEdge.get(edge.id) ? { attachments: attachmentByEdge.get(edge.id) } : {}),
         ...(edge.label ? { label: edge.label } : edgeLabels[edge.type] ? { label: edgeLabels[edge.type] } : {}),
       },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: '#cbd5e1' },
+      markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'hsl(var(--muted-foreground))' },
       style: edgeStyles[edge.type],
     }
   })

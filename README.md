@@ -129,3 +129,7 @@
 - Adapter คำนวณ edge attachments แบบ matrix-aware: internal edge ใช้ row/column delta เพื่อเลือก side, external edge bias ตาม orientation; ทุก edge ได้ offset เฉพาะตัว
 - Handle offsets เป็น center-first แล้วกระจายสมมาตร (palette 0.5, 0.65, 0.35, 0.8, 0.2, …) เพื่อหลีกเลี่ยงการซ้อนจุดต่อหลายเส้น
 - FloatingEdge อ่าน attachments/offset ก่อน (fallback geometric) ใช้ `positionAbsolute` จาก React Flow เพื่อคำนวณ anchor ตามกล่อง node
+- เพิ่มระบบ Design Tokens (Tailwind v4 + Shadcn-compatible) ไว้ที่ `src/styles/theme.css` และเชื่อมเข้ากับ `src/index.css` / UI ทั้งหมด (App shell, Panels, Nodes, Edges) เพื่อรองรับ light/dark และลด hardcode สี/รัศมี/เงา
+- ปรับสีเส้น Edge ไปใช้ `muted-foreground` (เหมาะกับ light/dark) และ marker สีเดียวกัน
+- ซ่อน MiniMap ชั่วคราว (ยังคง register component ไว้) ด้วย style ซ่อน
+- FitView ตอนโหลด: เปิด `fitView` บน ReactFlow + เรียกซ้ำหลัง RAF และ delay 80ms พร้อม `includeHiddenNodes: true` เพื่อลดปัญหาซูมไม่พอดีครั้งแรก
