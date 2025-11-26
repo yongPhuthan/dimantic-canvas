@@ -6,9 +6,10 @@ import {
   getSmoothStepPath,
   useNodes,
   useReactFlow,
+  useStore,
   useStoreApi,
 } from '@xyflow/react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { USE_CASE_EDGE_TYPE, type UseCaseEdgeData, type UseCaseReactFlowEdge, type UseCaseReactFlowNode } from '../../types/graph'
 
@@ -16,6 +17,9 @@ type FlowNodeWithPosition = UseCaseReactFlowNode & { parentId?: string }
 type AttachmentRole = 'source' | 'target'
 
 const SPREAD_PADDING = 0.15 // keep anchors away from extreme corners and spread more
+const LABEL_GAP_PADDING_X = 12
+const LABEL_GAP_PADDING_Y = 6
+const LABEL_MIN_GAP = 12
 
 function pickPositions(
   sourceCenter: { x: number; y: number },
@@ -50,11 +54,27 @@ export function EdgeModel({
   style,
   markerStart,
 }: EdgeProps<UseCaseReactFlowEdge>) {
+  const labelRef = useRef<HTMLButtonElement>(null)
+  const [labelSize, setLabelSize] = useState({ width: 48, height: 24 })
   const nodes = useNodes() as FlowNodeWithPosition[]
   const { getInternalNode, setEdges } = useReactFlow<UseCaseReactFlowNode, UseCaseReactFlowEdge>()
+  const zoom = useStore((s) => s.transform[2] ?? 1)
   const store = useStoreApi()
   const rfId = store.getState().rfId ?? 'rf'
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
+  const labelText = (data?.label as string | undefined)?.trim() || 'Edit label'
+
+  useLayoutEffect(() => {
+    const el = labelRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const next = { width: rect.width, height: rect.height }
+    const changed =
+      Math.abs(next.width - labelSize.width) > 0.5 || Math.abs(next.height - labelSize.height) > 0.5
+    if (changed) {
+      setLabelSize(next)
+    }
+  }, [labelSize.height, labelSize.width, labelText, zoom])
 
   const getAbsolutePosition = useCallback(
     (node: FlowNodeWithPosition): XYPosition => {
@@ -291,6 +311,9 @@ export function EdgeModel({
   })
 
   const strokeColor = (style as { stroke?: string } | undefined)?.stroke ?? 'hsl(var(--muted-foreground))'
+  const gapWidth = Math.max((labelSize.width + LABEL_GAP_PADDING_X * 2) / zoom, LABEL_MIN_GAP / zoom)
+  const gapHeight = Math.max((labelSize.height + LABEL_GAP_PADDING_Y * 2) / zoom, LABEL_MIN_GAP / (2 * zoom))
+  const maskId = `edge-gap-${rfId}-${id}`
 
   // Always use a custom marker per edge/side so orientation follows the target side.
   const appliedMarkerEnd = `url(#floating-arrow-${rfId}-${id}-${targetSideUsed})`
@@ -322,6 +345,18 @@ export function EdgeModel({
         >
           <path d="M 0 0 L 14 9 L 0 18 z" fill={strokeColor} />
         </marker>
+        <mask id={maskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">
+          <rect x="-100000" y="-100000" width="200000" height="200000" fill="white" />
+          <rect
+            x={labelX - gapWidth / 2}
+            y={labelY - gapHeight / 2}
+            width={gapWidth}
+            height={gapHeight}
+            rx={gapHeight / 2}
+            ry={gapHeight / 2}
+            fill="black"
+          />
+        </mask>
       </defs>
       <BaseEdge
         id={id}
@@ -330,63 +365,53 @@ export function EdgeModel({
         markerStart={appliedMarkerStart}
         markerEnd={appliedMarkerEnd}
         interactionWidth={40}
+        pathProps={{ mask: `url(#${maskId})` }}
         className={
           selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_hsl(var(--ring)/0.55)]' : ''
         }
       />
       <EdgeLabelRenderer>
-        {(() => {
-          const dx = targetX - sourceX
-          const dy = targetY - sourceY
-          const horizontal = Math.abs(dx) >= Math.abs(dy)
-          const hash = Array.from(id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
-          const tier = (hash % 5) - 2 // -2..2
-          const offset = horizontal
-            ? { x: tier * 12, y: dy >= 0 ? -20 : 20 }
-            : { x: dx >= 0 ? -20 : 20, y: tier * 12 }
-          return (
-            <button
-              onClick={() => {
-                const current = (data?.label as string | undefined) ?? ''
-                const next = window.prompt('Edit edge label', current)
-                if (next === null) return
-                const value = next.trim()
-                setEdges((eds) =>
-                  eds.map((e) =>
-                    e.id === id
-                      ? {
-                          ...e,
-                          data: {
-                            ...(e.data ?? {}),
-                            kind: (e.data as UseCaseEdgeData | undefined)?.kind ?? USE_CASE_EDGE_TYPE.ASSOCIATION,
-                            ...(value ? { label: value } : { label: '' }),
-                          },
-                        }
-                      : e,
-                  ),
-                )
-              }}
-              style={{
-                position: 'absolute',
-                transform: `translate(-50%, -50%) translate(${labelX + offset.x}px, ${labelY + offset.y}px)`,
-                pointerEvents: 'auto',
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'hsl(var(--popover-foreground))',
-                backgroundColor: 'hsl(var(--popover) / 0.92)',
-                padding: '2px 8px',
-                borderRadius: 999,
-                border: '1px solid hsl(var(--border))',
-                boxShadow: 'var(--shadow-popover)',
-                whiteSpace: 'nowrap',
-                cursor: 'pointer',
-                zIndex: 40,
-              }}
-            >
-              {(data?.label as string | undefined)?.trim() || 'Edit label'}
-            </button>
-          )
-        })()}
+        <button
+          ref={labelRef}
+          onClick={() => {
+            const current = (data?.label as string | undefined) ?? ''
+            const next = window.prompt('Edit edge label', current)
+            if (next === null) return
+            const value = next.trim()
+            setEdges((eds) =>
+              eds.map((e) =>
+                e.id === id
+                  ? {
+                      ...e,
+                      data: {
+                        ...(e.data ?? {}),
+                        kind: (e.data as UseCaseEdgeData | undefined)?.kind ?? USE_CASE_EDGE_TYPE.ASSOCIATION,
+                        ...(value ? { label: value } : { label: '' }),
+                      },
+                    }
+                  : e,
+              ),
+            )
+          }}
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            pointerEvents: 'auto',
+            fontSize: 12,
+            fontWeight: 600,
+            color: 'hsl(var(--popover-foreground))',
+            backgroundColor: 'hsl(var(--popover))',
+            padding: '4px 10px',
+            borderRadius: 999,
+            border: '1px solid hsl(var(--border))',
+            boxShadow: 'var(--shadow-popover)',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+            zIndex: 40,
+          }}
+        >
+          {labelText}
+        </button>
       </EdgeLabelRenderer>
     </>
   )

@@ -41,6 +41,7 @@ const elk = new ELK()
 const BASE_SIZE: Record<RawGraphNode['type'], { width: number; height: number }> = {
   [USE_CASE_NODE_TYPE.ACTOR]: { width: 140, height: 140 },
   [USE_CASE_NODE_TYPE.USE_CASE]: { width: 160, height: 160 },
+  [USE_CASE_NODE_TYPE.MEDIA]: { width: 180, height: 220 },
   [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: { width: 240, height: 240 },
 }
 
@@ -384,9 +385,11 @@ export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Pro
   const flattened: LayoutResultNode[] = []
   const nodeTypeMap = new Map(graph.nodes.map((n) => [n.id, n.type]))
   const parentMap = new Map(graph.nodes.map((n) => [n.id, n.parentId]))
+  const nodeMetaMap = new Map(graph.nodes.map((n) => [n.id, n]))
 
   const walk = (node: ElkLayoutNode, parentId?: string) => {
     const type = nodeTypeMap.get(node.id) ?? USE_CASE_NODE_TYPE.USE_CASE
+    const original = nodeMetaMap.get(node.id)
     const placement = placementByChild.get(node.id)
     const subgraphSize = subgraphLayouts.get(node.id)?.size
     const baseSize = sizeMap.get(node.id) ?? BASE_SIZE[type]
@@ -399,6 +402,9 @@ export async function runElkLayout(graph: GraphModel, config: LayoutConfig): Pro
       label: node.labels?.[0]?.text ?? node.id,
       type,
       parentId: nextParentId,
+      ...(original?.icon ? { icon: original.icon } : {}),
+      ...(original?.media ? { media: original.media } : {}),
+      ...(original?.properties ? { properties: original.properties } : {}),
       x: placement?.x ?? node.x ?? 0,
       y: placement?.y ?? node.y ?? 0,
       width,

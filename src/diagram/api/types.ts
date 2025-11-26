@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type { UseCaseEdgeKind, UseCaseNodeKind } from '../types/graph'
+import type { NodeMedia, NodeProperty, UseCaseEdgeKind, UseCaseNodeKind } from '../types/graph'
 
 export type DiagramNodeKind = UseCaseNodeKind
 export type DiagramEdgeKind = UseCaseEdgeKind
@@ -55,6 +55,9 @@ export type DiagramNodeProps = {
   xs?: number
   sm?: number
   md?: number
+  icon?: string
+  media?: NodeMedia
+  properties?: NodeProperty[]
   children?: ReactNode
 }
 

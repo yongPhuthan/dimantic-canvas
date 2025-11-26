@@ -2,6 +2,7 @@ import { MarkerType, Position, type Edge } from '@xyflow/react'
 
 import { EdgeModel } from '../render/edgeTypes/FloatingEdge'
 import { ActorNode } from '../render/nodeTypes/ActorNode'
+import { MediaNode } from '../render/nodeTypes/MediaNode'
 import { SystemNode } from '../render/nodeTypes/SystemNode'
 import { UseCaseNode } from '../render/nodeTypes/UseCaseNode'
 import { anchorId, anchorOffsets } from './handleAnchors'
@@ -11,6 +12,7 @@ import type { LayoutResult } from '../layout/elkLayoutEngine'
 const nodeTypes = {
   [USE_CASE_NODE_TYPE.ACTOR]: ActorNode,
   [USE_CASE_NODE_TYPE.USE_CASE]: UseCaseNode,
+  [USE_CASE_NODE_TYPE.MEDIA]: MediaNode,
   [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: SystemNode,
 }
 
@@ -24,6 +26,12 @@ const defaultHandles: Record<RawGraphNode['type'], NonNullable<UseCaseNodeData['
     left: { source: 1, target: 0 },
   },
   [USE_CASE_NODE_TYPE.USE_CASE]: {
+    top: { source: 1, target: 1 },
+    right: { source: 2, target: 1 },
+    bottom: { source: 1, target: 1 },
+    left: { source: 2, target: 1 },
+  },
+  [USE_CASE_NODE_TYPE.MEDIA]: {
     top: { source: 1, target: 1 },
     right: { source: 2, target: 1 },
     bottom: { source: 1, target: 1 },
@@ -51,6 +59,7 @@ const edgeLabels: Partial<Record<RawGraphEdge['type'], string>> = {
 const accentByKind: Record<RawGraphNode['type'], string> = {
   [USE_CASE_NODE_TYPE.ACTOR]: 'hsl(var(--accent))',
   [USE_CASE_NODE_TYPE.USE_CASE]: 'hsl(var(--primary))',
+  [USE_CASE_NODE_TYPE.MEDIA]: 'hsl(var(--secondary))',
   [USE_CASE_NODE_TYPE.SYSTEM_BOUNDARY]: 'hsl(var(--border))',
 }
 
@@ -319,6 +328,9 @@ export function adaptLayoutToReactFlow(layout: LayoutResult): {
       data: {
         label: node.label,
         kind: node.type,
+        icon: node.icon,
+        media: node.media,
+        properties: node.properties,
         accentColor: accentByKind[node.type] ?? 'hsl(var(--primary))',
         handleLayout: resolveHandleLayout(node.id, node.type),
       },

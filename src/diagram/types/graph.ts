@@ -4,10 +4,14 @@ export const USE_CASE_NODE_TYPE = {
   ACTOR: 'ACTOR',
   USE_CASE: 'USE_CASE',
   SYSTEM_BOUNDARY: 'SYSTEM_BOUNDARY',
+  MEDIA: 'MEDIA',
 } as const
 
 export type UseCaseNodeKind =
   (typeof USE_CASE_NODE_TYPE)[keyof typeof USE_CASE_NODE_TYPE]
+
+export type NodeProperty = { key: string; value: string }
+export type NodeMedia = { src?: string; alt?: string; icon?: string }
 
 export const USE_CASE_EDGE_TYPE = {
   ASSOCIATION: 'ASSOCIATION',
@@ -25,6 +29,9 @@ export interface RawGraphNode {
   parentId?: string
   width?: number
   height?: number
+  icon?: string
+  media?: NodeMedia
+  properties?: NodeProperty[]
 }
 
 export interface RawGraphEdge {
@@ -45,6 +52,8 @@ export interface UseCaseNodeData extends Record<string, unknown> {
   kind: UseCaseNodeKind
   icon?: string
   accentColor?: string
+  media?: NodeMedia
+  properties?: NodeProperty[]
   handleLayout?: {
     top: { source: number; target: number }
     right: { source: number; target: number }
