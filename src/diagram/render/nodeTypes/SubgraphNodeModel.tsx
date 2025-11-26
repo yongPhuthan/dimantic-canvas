@@ -1,21 +1,14 @@
-import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
+import { Handle, NodeResizer, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
+import { useEffect, useMemo } from 'react'
 import { anchorId, anchorOffsets } from '../../core/handleAnchors'
 import type { UseCaseReactFlowNode } from '../../types/graph'
 
-const handleVisibility = (selected: boolean) =>
-  selected
-    ? 'opacity-100 pointer-events-auto scale-100'
-    : 'opacity-0 pointer-events-none scale-75 group-hover:opacity-100 group-hover:pointer-events-auto group-hover:scale-100'
+const handleVisibility = () => 'opacity-0 pointer-events-none scale-75'
 
-const handleBase = (selected: boolean) =>
-  `h-3 w-3 rounded-full border-2 border-white bg-sky-400 shadow ring-2 ring-white transition duration-150 ${handleVisibility(selected)}`
+const handleBase = () =>
+  `h-3 w-3 rounded-full border-2 border-white bg-sky-400 shadow ring-2 ring-white transition duration-150 ${handleVisibility()}`
 
-function renderHandles(
-  side: Position,
-  type: 'source' | 'target',
-  count: number,
-  selected: boolean,
-) {
+function renderHandles(side: Position, type: 'source' | 'target', count: number) {
   if (count <= 0) return null
   const offsets = anchorOffsets(count)
   return Array.from({ length: count }).map((_, idx) => {
@@ -31,7 +24,7 @@ function renderHandles(
         id={id}
         type={type}
         position={side}
-        className={`${handleBase(selected)} ${
+        className={`${handleBase()} ${
           side === Position.Top ? '-mt-1' : side === Position.Bottom ? '-mb-1' : side === Position.Left ? '-ml-1' : '-mr-1'
         }`}
         style={style}
@@ -40,8 +33,19 @@ function renderHandles(
   })
 }
 
-export function SubgraphNodeModel({ data, selected }: NodeProps<UseCaseReactFlowNode>) {
+export function SubgraphNodeModel({ id, data, selected }: NodeProps<UseCaseReactFlowNode>) {
   const layout = data.handleLayout
+  const updateNodeInternals = useUpdateNodeInternals()
+  const handleLayoutKey = useMemo(
+    () =>
+      `${layout?.top.source ?? 0}-${layout?.top.target ?? 0}-${layout?.right.source ?? 0}-${layout?.right.target ?? 0}-${layout?.bottom.source ?? 0}-${layout?.bottom.target ?? 0}-${layout?.left.source ?? 0}-${layout?.left.target ?? 0}`,
+    [layout],
+  )
+
+  useEffect(() => {
+    // Ensure React Flow recomputes handleBounds after dynamic handle layout changes.
+    updateNodeInternals?.(id)
+  }, [id, handleLayoutKey, updateNodeInternals])
 
   return (
     <div
@@ -69,17 +73,17 @@ export function SubgraphNodeModel({ data, selected }: NodeProps<UseCaseReactFlow
         <span className="text-slate-100">{data.label}</span>
       </div>
 
-      {renderHandles(Position.Top, 'target', layout?.top.target ?? 0, selected)}
-      {renderHandles(Position.Top, 'source', layout?.top.source ?? 0, selected)}
+      {renderHandles(Position.Top, 'target', layout?.top.target ?? 0)}
+      {renderHandles(Position.Top, 'source', layout?.top.source ?? 0)}
 
-      {renderHandles(Position.Right, 'source', layout?.right.source ?? 0, selected)}
-      {renderHandles(Position.Right, 'target', layout?.right.target ?? 0, selected)}
+      {renderHandles(Position.Right, 'source', layout?.right.source ?? 0)}
+      {renderHandles(Position.Right, 'target', layout?.right.target ?? 0)}
 
-      {renderHandles(Position.Bottom, 'target', layout?.bottom.target ?? 0, selected)}
-      {renderHandles(Position.Bottom, 'source', layout?.bottom.source ?? 0, selected)}
+      {renderHandles(Position.Bottom, 'target', layout?.bottom.target ?? 0)}
+      {renderHandles(Position.Bottom, 'source', layout?.bottom.source ?? 0)}
 
-      {renderHandles(Position.Left, 'source', layout?.left.source ?? 0, selected)}
-      {renderHandles(Position.Left, 'target', layout?.left.target ?? 0, selected)}
+      {renderHandles(Position.Left, 'source', layout?.left.source ?? 0)}
+      {renderHandles(Position.Left, 'target', layout?.left.target ?? 0)}
     </div>
   )
 }

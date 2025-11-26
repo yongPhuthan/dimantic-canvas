@@ -125,3 +125,7 @@
 - ELK ตั้ง spacing/padding สูง + orthogonal routing + label spacing เพื่อหลีกเลี่ยงเส้น/label เบียด; snap-to-grid 280x280 ใน React Flow
 - Edge สามารถลากปลายเส้นได้ (updatable=true, edgeUpdaterRadius 20) แม้จะยังมี warning จาก React Flow API
 - สี node ปัจจุบันเป็นส้มเพื่อดีบักการทับ (เปลี่ยนกลับได้ตามต้องการ)
+- Layout ส่งต่อ metadata ของ subgraph grid (columns, rows, placements) เพื่อใช้วาง anchor สำหรับ edges
+- Adapter คำนวณ edge attachments แบบ matrix-aware: internal edge ใช้ row/column delta เพื่อเลือก side, external edge bias ตาม orientation; ทุก edge ได้ offset เฉพาะตัว
+- Handle offsets เป็น center-first แล้วกระจายสมมาตร (palette 0.5, 0.65, 0.35, 0.8, 0.2, …) เพื่อหลีกเลี่ยงการซ้อนจุดต่อหลายเส้น
+- FloatingEdge อ่าน attachments/offset ก่อน (fallback geometric) ใช้ `positionAbsolute` จาก React Flow เพื่อคำนวณ anchor ตามกล่อง node
