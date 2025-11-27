@@ -365,7 +365,6 @@ export function EdgeModel({
         markerStart={appliedMarkerStart}
         markerEnd={appliedMarkerEnd}
         interactionWidth={40}
-        pathProps={{ mask: `url(#${maskId})` }}
         className={
           selected ? 'stroke-2 drop-shadow-[0_0_0.25rem_hsl(var(--ring)/0.55)]' : ''
         }
